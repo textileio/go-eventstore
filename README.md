@@ -1,9 +1,13 @@
 # go-eventstore
 
+[![Made by Textile](https://img.shields.io/badge/made%20by-Textile-informational.svg?style=flat-square)](https://textile.io)
+[![Chat on Slack](https://img.shields.io/badge/slack-slack.textile.io-informational.svg?style=flat-square)](https://slack.textile.io)
+[![GitHub license](https://img.shields.io/github/license/textileio/go-datastore.svg?style=flat-square)](./LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/textileio/go-datastore?style=flat-square)](https://goreportcard.com/report/github.com/textileio/go-datastore)
+[![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](http://godoc.org/github.com/textileio/go-datastore)
+[![Release](https://img.shields.io/github/release/textileio/go-reflux.svg?style=flat-square)](https://github.com/textileio/go-datastore/releases/latest)
+[![CircleCI branch](https://img.shields.io/circleci/project/github/textileio/go-datastore/master.svg?style=flat-square)](https://circleci.com/gh/textileio/go-datastore)
 [![standard-readme compliant](https://img.shields.io/badge/standard--readme-OK-green.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
-[![Go Report Card](https://goreportcard.com/badge/github.com/textileio/go-reflux?style=flat-square)](https://goreportcard.com/report/github.com/textileio/go-reflux)
-[![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](http://godoc.org/github.com/textileio/go-reflux)
-[![Release](https://img.shields.io/github/release/textileio/go-reflux.svg?style=flat-square)](https://github.com/textileio/go-reflux/releases/latest)
 
 > A lightweight event store in Go
 
