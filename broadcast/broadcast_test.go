@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/hashicorp/go-multierror"
 )
 
 const (
@@ -41,6 +43,83 @@ func TestSend(t *testing.T) {
 	})
 	wg.Add(N)
 	b.Send(testStr)
+	wg.Wait()
+}
+
+func TestSendError(t *testing.T) {
+	var b Broadcaster
+	// Register listeners, but do not consume
+	b.Listen()
+	b.Listen()
+	b.Listen()
+	if err := b.Send(testStr); err == nil {
+		t.Error("should error when no consumers")
+		if multi, ok := err.(*multierror.Error); ok {
+			if len(multi.Errors) != 3 {
+				t.Error("expected 3 errors")
+			}
+		} else {
+			t.Error("expected a multi-error")
+		}
+	}
+	if err := b.Send(testStr); err == nil {
+		t.Error("should error when no consumers")
+	}
+}
+
+func TestListenAndSendOnClosed(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Test should have panicked")
+		}
+	}()
+	var b = NewBroadcaster(5)
+	b.Discard()
+	b.Listen()
+	b.Send(testStr)
+}
+
+func TestListenAndSendOnCloseWithTimeout(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Test should have panicked")
+		}
+	}()
+	var b = NewBroadcaster(5)
+	b.Discard()
+	b.Listen()
+	b.SendWithTimeout(testStr, 0)
+}
+
+func TestSendWithTimeout(t *testing.T) {
+	var b Broadcaster
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func(i int, b *Broadcaster, wg *sync.WaitGroup) {
+		l := b.Listen()
+		wg.Done()
+		time.Sleep(time.Second)
+		select {
+		case v := <-l.Channel():
+			if v.(string) != testStr {
+				t.Error("bad value received")
+			}
+		case <-time.After(timeout):
+			t.Error("receive timed out")
+		}
+		wg.Done()
+	}(1, &b, &wg)
+	wg.Wait()
+	wg.Add(1)
+	if err := b.Send(testStr); err == nil {
+		t.Error("should error")
+	}
+	if err := b.SendWithTimeout(testStr, 0); err == nil {
+		t.Error("should error within 1 second")
+	}
+	if err := b.SendWithTimeout(testStr, 2*time.Second); err != nil {
+		t.Error("should not error within 2 seconds")
+	}
 	wg.Wait()
 }
 

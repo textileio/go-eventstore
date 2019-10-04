@@ -33,13 +33,20 @@
 //     v, ok <- l.Channel() // returns ok == false
 package broadcast
 
-import "sync"
+import (
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/hashicorp/go-multierror"
+)
 
 // Broadcaster implements a Publisher. The zero value is a usable un-buffered channel.
 type Broadcaster struct {
 	m         sync.Mutex
-	listeners map[int]chan<- interface{} // lazy init
-	nextID    int
+	listeners map[uint]chan<- interface{} // lazy init
+	nextID    uint
 	capacity  int
 	closed    bool
 }
@@ -49,17 +56,49 @@ func NewBroadcaster(n int) *Broadcaster {
 	return &Broadcaster{capacity: n}
 }
 
-// Send broadcasts a message to the channel.
+// SendWithTimeout broadcasts a message to each listener's channel.
 // Sending on a closed channel causes a runtime panic.
-func (b *Broadcaster) Send(v interface{}) {
+// This method blocks for a duration of up to `timeout` on each channel.
+// Returns error(s) if it is unable to send on a given listener's channel within `timeout` duration.
+func (b *Broadcaster) SendWithTimeout(v interface{}, timeout time.Duration) error {
 	b.m.Lock()
 	defer b.m.Unlock()
 	if b.closed {
 		panic("broadcast: send after close")
 	}
-	for _, l := range b.listeners {
-		l <- v
+	var result *multierror.Error
+	for id, l := range b.listeners {
+		select {
+		case l <- v:
+			// Success!
+		case <-time.After(timeout):
+			err := fmt.Sprintf("unable to send to listener '%d'", id)
+			result = multierror.Append(result, errors.New(err))
+		}
 	}
+	return result.ErrorOrNil()
+}
+
+// Send broadcasts a message to each listener's channel.
+// Sending on a closed channel causes a runtime panic.
+// This method is non-blocking, and will return errors if unable to send on a given listener's channel.
+func (b *Broadcaster) Send(v interface{}) error {
+	b.m.Lock()
+	defer b.m.Unlock()
+	if b.closed {
+		panic("broadcast: send after close")
+	}
+	var result *multierror.Error
+	for id, l := range b.listeners {
+		select {
+		case l <- v:
+			// Success!
+		default:
+			err := fmt.Sprintf("unable to send to listener '%d'", id)
+			result = multierror.Append(result, errors.New(err))
+		}
+	}
+	return result.ErrorOrNil()
 }
 
 // Discard closes the channel, disabling the sending of further messages.
@@ -77,7 +116,7 @@ func (b *Broadcaster) Listen() *Listener {
 	b.m.Lock()
 	defer b.m.Unlock()
 	if b.listeners == nil {
-		b.listeners = make(map[int]chan<- interface{})
+		b.listeners = make(map[uint]chan<- interface{})
 	}
 	for b.listeners[b.nextID] != nil {
 		b.nextID++
@@ -94,7 +133,7 @@ func (b *Broadcaster) Listen() *Listener {
 type Listener struct {
 	ch <-chan interface{}
 	b  *Broadcaster
-	id int
+	id uint
 }
 
 // Discard closes the Listener, disabling the reception of further messages.

@@ -28,7 +28,7 @@ TODO: Fill out this long description.
 ## Install
 
 ```
-go get github.com/textileio/go-reflux
+go get github.com/textileio/go-eventstore
 ```
 
 ## Usage
