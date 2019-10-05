@@ -1,26 +1,49 @@
 package eventstore
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
-	datastore "github.com/ipfs/go-datastore"
+	"github.com/hashicorp/go-multierror"
+	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 )
 
-func TestNewEventDispatcher(t *testing.T) {
-	eventstore := NewTxMapDatastore()
-	dispatcher := NewDispatcher(eventstore)
+type nullReducer struct{}
+
+func (n *nullReducer) Reduce(event Event) error {
+	return nil
+}
+
+type errorReducer struct{}
+
+func (n *errorReducer) Reduce(event Event) error {
+	return errors.New("error")
+}
+
+type slowReducer struct{}
+
+func (n *slowReducer) Reduce(event Event) error {
+	time.Sleep(2 * time.Second)
+	return nil
+}
+
+func setup() *Dispatcher {
+	return NewDispatcher(datastore.NewMapDatastore())
+}
+
+func TestNewDispatcher(t *testing.T) {
+	dispatcher := setup()
 	event := &nullEvent{Timestamp: time.Now()}
 	dispatcher.Dispatch(event)
 }
 
 func TestRegister(t *testing.T) {
-	eventstore := NewTxMapDatastore()
-	dispatcher := NewDispatcher(eventstore)
+	dispatcher := setup()
 	token := dispatcher.Register(&nullReducer{})
-	if token != "ID-1" {
+	if token != 1 {
 		t.Error("callback registration failed")
 	}
 	if len(dispatcher.reducers) < 1 {
@@ -29,8 +52,7 @@ func TestRegister(t *testing.T) {
 }
 
 func TestDispatchLock(t *testing.T) {
-	eventstore := NewTxMapDatastore()
-	dispatcher := NewDispatcher(eventstore)
+	dispatcher := setup()
 	dispatcher.Register(&slowReducer{})
 	event := &nullEvent{Timestamp: time.Now()}
 	t1 := time.Now()
@@ -53,60 +75,45 @@ func TestDispatchLock(t *testing.T) {
 }
 
 func TestDeregister(t *testing.T) {
-	eventstore := NewTxMapDatastore()
-	dispatcher := NewDispatcher(eventstore)
-	if err := dispatcher.Deregister("string"); err == nil {
-		t.Error("expected invalid de-registration to return error")
-	}
+	dispatcher := setup()
+	dispatcher.Deregister(99) // no-op
 	token := dispatcher.Register(&nullReducer{})
-	if err := dispatcher.Deregister(token); err != nil {
-		t.Error("error attempting to deregister a valid callback")
-	}
+	dispatcher.Deregister(token)
 	if len(dispatcher.reducers) > 0 {
-		t.Error("expected callbacks map to have zero length")
+		t.Error("expected reducers map to have zero length")
 	}
 }
 
 func TestDispatch(t *testing.T) {
-	eventstore := NewTxMapDatastore()
-	dispatcher := NewDispatcher(eventstore)
+	dispatcher := setup()
 	event := &nullEvent{Timestamp: time.Now()}
 	if err := dispatcher.Dispatch(event); err != nil {
 		t.Error("unexpected error in dispatch call")
 	}
 	results, err := dispatcher.Query(query.Query{})
-	if len(results) != 1 {
-		t.Errorf("expected 1 result, got %d", len(results))
+	if rest, _ := results.Rest(); len(rest) != 1 {
+		t.Errorf("expected 1 result, got %d", len(rest))
 	}
 	dispatcher.Register(&errorReducer{})
 	err = dispatcher.Dispatch(event)
-	if err == nil {
+	if errs, ok := err.(*multierror.Error); ok {
+		if len(errs.Errors) != 1 {
+			t.Error("should be one error")
+		}
+		if errs.Errors[0].Error() != "warning error" {
+			t.Errorf("`%s` should be `warning error`", err)
+		}
+	} else {
 		t.Error("expected error in dispatch call")
 	}
-	if err.Error() != "error" {
-		t.Errorf("`%s` should be `error`", err)
-	}
 	results, err = dispatcher.Query(query.Query{})
-	if len(results) > 1 {
-		t.Errorf("expected 1 result, got %d", len(results))
-	}
-}
-
-func TestValidStore(t *testing.T) {
-	eventstore := NewTxMapDatastore()
-	dispatcher := NewDispatcher(eventstore)
-	store := dispatcher.Store()
-	if store == nil {
-		t.Error("store should not be nil")
-	}
-	if ok, _ := store.Has(datastore.NewKey("blah")); ok {
-		t.Error("store should be empty")
+	if rest, _ := results.Rest(); len(rest) != 1 {
+		t.Errorf("expected 1 result, got %d", len(rest))
 	}
 }
 
 func TestQuery(t *testing.T) {
-	eventstore := NewTxMapDatastore()
-	dispatcher := NewDispatcher(eventstore)
+	dispatcher := setup()
 	var events []Event
 	n := 100
 	for i := 1; i <= n; i++ {
@@ -124,7 +131,7 @@ func TestQuery(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %s", err.Error())
 	}
-	if len(results) != n {
-		t.Errorf("expected %d result, got %d", n, len(results))
+	if rest, _ := results.Rest(); len(rest) != n {
+		t.Errorf("expected %d result, got %d", n, len(rest))
 	}
 }
