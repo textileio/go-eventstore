@@ -68,27 +68,29 @@ func TestSendError(t *testing.T) {
 }
 
 func TestListenAndSendOnClosed(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("Test should have panicked")
-		}
-	}()
 	var b = NewBroadcaster(5)
 	b.Discard()
 	b.Listen()
-	b.Send(testStr)
+	err := b.Send(testStr)
+	if err != ErrClosedChannel {
+		t.Errorf("Test should raise closed channel error: %s", err.Error())
+	}
+	if err.Error() != "send after close" {
+		t.Error("Test should raise `send after close`")
+	}
 }
 
 func TestListenAndSendOnCloseWithTimeout(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("Test should have panicked")
-		}
-	}()
 	var b = NewBroadcaster(5)
 	b.Discard()
 	b.Listen()
-	b.SendWithTimeout(testStr, 0)
+	err := b.SendWithTimeout(testStr, 0)
+	if err != ErrClosedChannel {
+		t.Errorf("Test should raise closed channel error: %s", err.Error())
+	}
+	if err.Error() != "send after close" {
+		t.Error("Test should raise `send after close`")
+	}
 }
 
 func TestSendWithTimeout(t *testing.T) {

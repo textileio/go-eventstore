@@ -42,6 +42,13 @@ import (
 	"github.com/hashicorp/go-multierror"
 )
 
+// ErrClosedChannel means the caller attempted to send to one or more closed broadcast channels.
+const ErrClosedChannel = broadcastError("send after close")
+
+type broadcastError string
+
+func (e broadcastError) Error() string { return string(e) }
+
 // Broadcaster implements a Publisher. The zero value is a usable un-buffered channel.
 type Broadcaster struct {
 	m         sync.Mutex
@@ -64,7 +71,7 @@ func (b *Broadcaster) SendWithTimeout(v interface{}, timeout time.Duration) erro
 	b.m.Lock()
 	defer b.m.Unlock()
 	if b.closed {
-		panic("broadcast: send after close")
+		return ErrClosedChannel
 	}
 	var result *multierror.Error
 	for id, l := range b.listeners {
@@ -86,7 +93,7 @@ func (b *Broadcaster) Send(v interface{}) error {
 	b.m.Lock()
 	defer b.m.Unlock()
 	if b.closed {
-		panic("broadcast: send after close")
+		return ErrClosedChannel
 	}
 	var result *multierror.Error
 	for id, l := range b.listeners {
