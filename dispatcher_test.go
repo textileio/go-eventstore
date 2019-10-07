@@ -103,7 +103,13 @@ func TestRegister(t *testing.T) {
 
 func TestDeregister(t *testing.T) {
 	dispatcher := setup()
-	dispatcher.Deregister(99) // no-op
+	err := dispatcher.Deregister(99)
+	if err == nil {
+		t.Error("expected to throw error")
+	}
+	if err.Error() != "token not found" {
+		t.Error("expected token now found error")
+	}
 	token := dispatcher.Register(&nullReducer{})
 	dispatcher.Deregister(token)
 	if len(dispatcher.reducers) > 0 {
@@ -136,18 +142,11 @@ func TestPersistError(t *testing.T) {
 		datastore.NewMapDatastore(),
 	})
 	event := &nullEvent{Timestamp: time.Now()}
+	dispatcher.Register(&errorReducer{})
+	dispatcher.Register(&errorReducer{})
 	err := dispatcher.Dispatch(event)
-	dispatcher.Register(&errorReducer{})
-	dispatcher.Register(&errorReducer{})
-	if errs, ok := err.(*multierror.Error); ok {
-		if len(errs.Errors) != 1 {
-			t.Error("should be one error")
-		}
-		if errs.Errors[0].Error() != "critical error" {
-			t.Errorf("`%s` should be `critical error`", err)
-		}
-	} else {
-		t.Error("expected error in dispatch call")
+	if err != ErrPersistence {
+		t.Error("expected persistence error")
 	}
 }
 

@@ -16,6 +16,17 @@ type Token uint
 // lastID is the last ID used by the singleton Dispatcher.
 var lastID uint
 
+const (
+	// ErrPersistence means that a write to the underlying event store failed.
+	ErrPersistence = esError("persistance failure")
+	// ErrTokenNotFound means the given token was not found in the dispatcher's reducer map.
+	ErrTokenNotFound = esError("token not found")
+)
+
+type esError string
+
+func (e esError) Error() string { return string(e) }
+
 // Dispatcher is used to dispatch events to registered reducers.
 //
 // This is different from generic pub-sub systems because reducers are not subscribed to particular events.
@@ -62,10 +73,14 @@ func (d *Dispatcher) Register(reducer Reducer) Token {
 
 // Deregister removes a reducer based on its token. If the token is invalid (i.e. no associated reducer),
 // this is a no-op.
-func (d *Dispatcher) Deregister(token Token) {
+func (d *Dispatcher) Deregister(token Token) error {
 	d.lock.Lock()
 	defer d.lock.Unlock()
+	if _, ok := d.reducers[token]; !ok {
+		return ErrTokenNotFound
+	}
 	delete(d.reducers, token)
+	return nil
 }
 
 // Dispatch dispatches a payload to all registered reducers. It returns a multierror object, which may contain
@@ -80,7 +95,7 @@ func (d *Dispatcher) Dispatch(event Event) error {
 	key := datastore.NewKey(string(event.Time())).ChildString(event.EntityID()).ChildString(event.Type())
 	// Add an Event's body to the event store as the value
 	if err := d.store.Put(key, event.Body()); err != nil {
-		return multierror.Append(multierror.Prefix(err, "critical"))
+		return ErrPersistence
 	}
 	// Fire off reducers now that event is safely persisted
 	wg := sync.WaitGroup{}
