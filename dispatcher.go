@@ -1,8 +1,6 @@
 package eventstore
 
 import (
-	"bytes"
-	"encoding/gob"
 	"sync"
 
 	"github.com/hashicorp/go-multierror"
@@ -32,13 +30,14 @@ type Dispatcher struct {
 }
 
 // NewDispatcher returns a new Dispatcher. This should only be called once in an application to ensure a singleton
-// displatcher. While it is not enforced here, it is a good idea to a singleton pattern in your own code, for example:
+// dispatcher. While it is not enforced here, it is a good idea to a singleton pattern in your own code, for example:
 // 	var (
 // 		once sync.Once
 // 		instance *Dispatcher
 // 	)
+// 	var store = ...
 //
-//	func New() *Dispatcher {
+//	func GetDispatcher() *Dispatcher {
 // 		once.Do(func() {
 // 			singleton = NewDispatcher(store)
 // 		})
@@ -79,29 +78,29 @@ func (d *Dispatcher) Dispatch(event Event) error {
 	// Key format: <timestamp>/<entity-id>/<type>
 	// @todo: This is up for debate, its a 'fake' Event struct right now anyway
 	key := datastore.NewKey(string(event.Time())).ChildString(event.EntityID()).ChildString(event.Type())
-	// Encode and add an Event to event store
-	b := bytes.Buffer{}
-	e := gob.NewEncoder(&b)
-	if err := e.Encode(event.Body()); err != nil {
-		return multierror.Append(multierror.Prefix(err, "critical"))
-	}
-	if err := d.store.Put(key, b.Bytes()); err != nil {
+	// Add an Event's body to the event store as the value
+	if err := d.store.Put(key, event.Body()); err != nil {
 		return multierror.Append(multierror.Prefix(err, "critical"))
 	}
 	// Fire off reducers now that event is safely persisted
 	wg := sync.WaitGroup{}
 	wg.Add(len(d.reducers))
+	errChan := make(chan error, len(d.reducers))
 	for _, reducer := range d.reducers {
-		// Launch each reducer in a separate goroutine
+		// Launch each reducer in a separate goroutine and send back errors
 		go func(r Reducer) {
+			defer wg.Done()
 			if err := r.Reduce(event); err != nil {
-				result = multierror.Append(result, multierror.Prefix(err, "warning"))
+				errChan <- multierror.Prefix(err, "warning")
 			}
-			wg.Done()
 		}(reducer)
 	}
-	// Wait for all reducers to complete (or error) before releasing our lock
 	wg.Wait()
+	// Close and then read from error channel to put into multierror
+	close(errChan)
+	for err := range errChan {
+		result = multierror.Append(result, err)
+	}
 	return result.ErrorOrNil()
 }
 

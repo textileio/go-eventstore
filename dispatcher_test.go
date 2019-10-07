@@ -56,6 +56,14 @@ func (n *nullEvent) Type() string {
 	return "null"
 }
 
+type ErrorMapDatastore struct {
+	*datastore.MapDatastore
+}
+
+func (m *ErrorMapDatastore) Put(key datastore.Key, value []byte) error {
+	return errors.New("error")
+}
+
 // Sanity check
 var _ Event = (*nullEvent)(nil)
 
@@ -64,9 +72,22 @@ func setup() *Dispatcher {
 }
 
 func TestNewDispatcher(t *testing.T) {
+	invalid := &Dispatcher{}
+	if invalid.store != nil {
+		t.Error("nil store expected")
+	}
+	if invalid.reducers != nil {
+		t.Error("nil map expected")
+	}
 	dispatcher := setup()
 	event := &nullEvent{Timestamp: time.Now()}
 	dispatcher.Dispatch(event)
+	if dispatcher.store == nil {
+		t.Error("expected valid store")
+	}
+	if dispatcher.reducers == nil {
+		t.Error("expected valid map")
+	}
 }
 
 func TestRegister(t *testing.T) {
@@ -77,29 +98,6 @@ func TestRegister(t *testing.T) {
 	}
 	if len(dispatcher.reducers) < 1 {
 		t.Error("expected callbacks map to have non-zero length")
-	}
-}
-
-func TestDispatchLock(t *testing.T) {
-	dispatcher := setup()
-	dispatcher.Register(&slowReducer{})
-	event := &nullEvent{Timestamp: time.Now()}
-	t1 := time.Now()
-	wg := &sync.WaitGroup{}
-	go func() {
-		wg.Add(1)
-		defer wg.Done()
-		if err := dispatcher.Dispatch(event); err != nil {
-			t.Error("unexpected error in dispatch call")
-		}
-	}()
-	if err := dispatcher.Dispatch(event); err != nil {
-		t.Error("unexpected error in dispatch call")
-	}
-	wg.Wait()
-	t2 := time.Now()
-	if t2.Sub(t1) < (4 * time.Second) {
-		t.Error("reached this point too soon")
 	}
 }
 
@@ -119,12 +117,8 @@ func TestDispatch(t *testing.T) {
 	if err := dispatcher.Dispatch(event); err != nil {
 		t.Error("unexpected error in dispatch call")
 	}
-	results, err := dispatcher.Query(query.Query{})
-	if rest, _ := results.Rest(); len(rest) != 1 {
-		t.Errorf("expected 1 result, got %d", len(rest))
-	}
 	dispatcher.Register(&errorReducer{})
-	err = dispatcher.Dispatch(event)
+	err := dispatcher.Dispatch(event)
 	if errs, ok := err.(*multierror.Error); ok {
 		if len(errs.Errors) != 1 {
 			t.Error("should be one error")
@@ -135,9 +129,48 @@ func TestDispatch(t *testing.T) {
 	} else {
 		t.Error("expected error in dispatch call")
 	}
-	results, err = dispatcher.Query(query.Query{})
-	if rest, _ := results.Rest(); len(rest) != 1 {
-		t.Errorf("expected 1 result, got %d", len(rest))
+}
+
+func TestPersistError(t *testing.T) {
+	dispatcher := NewDispatcher(&ErrorMapDatastore{
+		datastore.NewMapDatastore(),
+	})
+	event := &nullEvent{Timestamp: time.Now()}
+	err := dispatcher.Dispatch(event)
+	dispatcher.Register(&errorReducer{})
+	dispatcher.Register(&errorReducer{})
+	if errs, ok := err.(*multierror.Error); ok {
+		if len(errs.Errors) != 1 {
+			t.Error("should be one error")
+		}
+		if errs.Errors[0].Error() != "critical error" {
+			t.Errorf("`%s` should be `critical error`", err)
+		}
+	} else {
+		t.Error("expected error in dispatch call")
+	}
+}
+
+func TestLock(t *testing.T) {
+	dispatcher := setup()
+	dispatcher.Register(&slowReducer{})
+	event := &nullEvent{Timestamp: time.Now()}
+	t1 := time.Now()
+	wg := &sync.WaitGroup{}
+	go func() {
+		wg.Add(1)
+		defer wg.Done()
+		if err := dispatcher.Dispatch(event); err != nil {
+			t.Error("unexpected error in dispatch call")
+		}
+	}()
+	if err := dispatcher.Dispatch(event); err != nil {
+		t.Error("unexpected error in dispatch call")
+	}
+	wg.Wait()
+	t2 := time.Now()
+	if t2.Sub(t1) < (4 * time.Second) {
+		t.Error("reached this point too soon")
 	}
 }
 
