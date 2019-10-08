@@ -1,0 +1,40 @@
+# Golang CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-go/ for more details
+version: 2
+jobs:
+  build:
+    docker:
+      # specify the version
+      - image: circleci/golang:1.13
+
+    #### TEMPLATE_NOTE: go expects specific checkout path representing url
+    #### expecting it in the form of
+    ####   /go/src/github.com/circleci/go-tool
+    ####   /go/src/bitbucket.org/circleci/go-tool
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    environment:
+      TEST_RESULTS: /tmp/test-results
+    steps:
+      - checkout
+      - run: mkdir -p $TEST_RESULTS
+      - restore_cache:
+          key: go-mod-v1-{{ checksum "go.sum" }}-{{ arch }}
+      - run:
+          name: cache mods
+          command: |
+            go mod download
+      - save_cache:
+          key: go-mod-v1-{{ checksum "go.sum" }}-{{ arch }}
+          paths:
+            - /go/pkg/mod
+      - run:
+          name: tests
+          environment:
+            GOTESTTAGS: -tags integration -coverprofile=coverage.txt
+          command: |
+            PACKAGE_NAMES=$(go list ./... | circleci tests split --split-by=timings --timings-type=classname)
+            gotestsum -f short-verbose --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- -coverprofile=cover.out $PACKAGE_NAMES
+            go tool cover -html=cover.out -o ${TEST_RESULTS}/coverage.html
+      - store_test_results:
+          path: /tmp/test-results
