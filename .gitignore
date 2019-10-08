@@ -54,6 +54,7 @@ __pycache__
 **/*.dylib
 **/*.dll
 **/*.exe
+**/*.exe~
 **/*.syso
 **/*.test
 **/*.prof
@@ -142,4 +143,5 @@ sourcemap.js
 .jest/
 coverage/
 
-# Repository
+# Dependency directories (remove the comment below to include it)
+# vendor/
