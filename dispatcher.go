@@ -1,6 +1,7 @@
 package eventstore
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/hashicorp/go-multierror"
@@ -8,7 +9,10 @@ import (
 	"github.com/ipfs/go-datastore/query"
 )
 
-// @todo: Should we also support a `Transformer` to actually fetch raw event data as part of a pipeline?
+// Reducer does some stuff...
+type Reducer interface {
+	Reduce(event Event) error
+}
 
 // Token is a simple unique ID used to reference a registered callback.
 type Token uint
@@ -123,4 +127,25 @@ func (d *Dispatcher) Dispatch(event Event) error {
 // Query method.
 func (d *Dispatcher) Query(query query.Query) (query.Results, error) {
 	return d.store.Query(query)
+}
+
+// Replay reruns the entire eventstore sequence through a given reducer via its token.
+func (d *Dispatcher) Replay(token Token) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	var result *multierror.Error
+	if reducer, ok := d.reducers[token]; ok {
+		qr, _ := d.store.Query(query.Query{
+			Orders: []query.Order{query.OrderByKey{}},
+		})
+		for r := range qr.Next() {
+			if r.Error != nil {
+				// handle.
+				break
+			}
+			reducer.Reduce()
+			fmt.Println(r.Entry.Key, r.Entry.Value)
+		}
+	}
+	return ErrTokenNotFound
 }
