@@ -1,4 +1,4 @@
-package playground
+package store
 
 import (
 	"encoding/json"
@@ -51,6 +51,19 @@ func (t *Txn) Save(id string, v interface{}) error {
 		return err
 	}
 	return t.persist(key, actual, v)
+}
+
+func (t *Txn) Delete(id string) error {
+	key := ds.NewKey(id)
+	exists, err := t.model.datastore.Has(key)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("can't remove since doesn't exist: %s", id)
+	}
+	// ToDo
+	panic("Not implemented yet")
 }
 
 func (t *Txn) FindByID(id string, v interface{}) error {

@@ -1,4 +1,4 @@
-package playground
+package store
 
 import (
 	"encoding/json"
@@ -8,6 +8,10 @@ import (
 
 	"github.com/alecthomas/jsonschema"
 	ds "github.com/ipfs/go-datastore"
+)
+
+var (
+	ErrNotFound = errors.New("instance not found")
 )
 
 type Model struct {
@@ -33,8 +37,7 @@ func (m *Model) FindByID(id string, v interface{}) error {
 	key := ds.NewKey(id)
 	bytes, err := m.datastore.Get(key)
 	if errors.Is(err, ds.ErrNotFound) {
-		v = nil
-		return nil
+		return ErrNotFound
 	}
 	if err != nil {
 		return err
