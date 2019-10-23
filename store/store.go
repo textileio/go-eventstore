@@ -6,19 +6,26 @@ import (
 
 	ds "github.com/ipfs/go-datastore"
 	kt "github.com/ipfs/go-datastore/keytransform"
-
+	logging "github.com/ipfs/go-log"
+	"github.com/textileio/go-eventstore"
 	"github.com/alecthomas/jsonschema"
 )
 
+var (
+	log = logging.Logger("store")
+)
+
 type Store struct {
-	datastore ds.Datastore
-	models    map[reflect.Type]*Model
+	datastore  ds.Datastore
+	dispatcher *eventstore.Dispatcher
+	models     map[reflect.Type]*Model
 }
 
-func NewStore(ds ds.Datastore) *Store {
+func NewStore(ds ds.Datastore, dispatcher *eventstore.Dispatcher) *Store {
 	return &Store{
-		datastore: ds,
-		models:    make(map[reflect.Type]*Model),
+		datastore:  ds,
+		dispatcher: dispatcher,
+		models:     make(map[reflect.Type]*Model),
 	}
 }
 
@@ -43,11 +50,14 @@ func (s *Store) Register(name string, t interface{}) (*Model, error) {
 	}
 
 	m := &Model{
-		schema:    jsonschema.Reflect(t),
-		datastore: kt.Wrap(s.datastore, pair), // Make models don't worry about namespaces
-		valueType: valueType,
+		schema:     jsonschema.Reflect(t),
+		datastore:  kt.Wrap(s.datastore, pair), // Make models don't worry about namespaces
+		valueType:  valueType,
+		dispatcher: s.dispatcher,
 	}
 	s.models[valueType] = m
+	regToken := s.dispatcher.Register(m)
+	m.dispatcherToken = regToken
 
 	// Debug (if you want to see generated JSON Schema)
 	// actualJSON, _ := json.MarshalIndent(m.schema, "", "  ")
