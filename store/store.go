@@ -1,14 +1,15 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 
+	"github.com/alecthomas/jsonschema"
 	ds "github.com/ipfs/go-datastore"
 	kt "github.com/ipfs/go-datastore/keytransform"
 	logging "github.com/ipfs/go-log"
 	"github.com/textileio/go-eventstore"
-	"github.com/alecthomas/jsonschema"
 )
 
 var (
@@ -43,7 +44,7 @@ func (s *Store) Register(name string, t interface{}) (*Model, error) {
 		Invert: func(k ds.Key) ds.Key {
 			l := k.List()
 			if !k.IsDescendantOf(baseKey) {
-				panic("huh!!")
+				panic("huh!!") // ToDo
 			}
 			return ds.KeyWithNamespaces(l[2:])
 		},
@@ -59,10 +60,8 @@ func (s *Store) Register(name string, t interface{}) (*Model, error) {
 	regToken := s.dispatcher.Register(m)
 	m.dispatcherToken = regToken
 
-	// Debug (if you want to see generated JSON Schema)
-	// actualJSON, _ := json.MarshalIndent(m.schema, "", "  ")
-	// fmt.Printf("Registered model:\n%s\n\n", string(actualJSON))
-	//
+	actualJSON, _ := json.MarshalIndent(m.schema, "", "  ")
+	log.Debug("registered model: %s", string(actualJSON))
 
 	return m, nil
 }
