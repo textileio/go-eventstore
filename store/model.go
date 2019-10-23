@@ -90,7 +90,7 @@ func (m *Model) Reduce(event eventstore.Event) (err error) {
 		var value, patchedValue []byte
 		value, err = m.datastore.Get(key)
 		if errors.Is(err, ds.ErrNotFound) {
-			if err = m.datastore.Put(key, event.Body()); err != nil {
+			if err = m.datastore.Put(key, op.JSONPatch); err != nil {
 				return
 			}
 			return
