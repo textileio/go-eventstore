@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("instance not found")
+	ErrNotFound   = errors.New("instance not found")
+	ErrReadonlyTx = errors.New("read only transaction")
 )
 
 type operationType string
@@ -32,6 +33,18 @@ type Model struct {
 	datastore       ds.Datastore
 	dispatcher      *eventstore.Dispatcher
 	dispatcherToken eventstore.Token
+}
+
+func (m *Model) Read(f func(txn *Txn) error) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	txn := &Txn{model: m, readonly: true, ops: make(map[ds.Key]operation)}
+	defer txn.Discard()
+	if err := f(txn); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *Model) Update(f func(txn *Txn) error) error {
@@ -59,9 +72,46 @@ func (m *Model) FindByID(id string, v interface{}) error {
 }
 
 func (m *Model) Reduce(event eventstore.Event) error {
-	log.Debug("Reduce() start")
+	log.Debugf("reducer %s start", m.schema.Ref)
+	defer log.Debugf("reducer %s end", m.schema.Ref)
 
-	log.Debug("Reduce() end")
+	if event.Type() != m.schema.Ref {
+		log.Debugf("ignoring event from uninteresting type")
+		return nil
+	}
+	var op operation
+	err := json.Unmarshal(event.Body(), &op)
+	if err != nil {
+		return err
+	}
+
+	key := ds.NewKey(event.EntityID())
+	switch op.Type {
+	case upsert:
+		value, err := m.datastore.Get(key)
+		if errors.Is(err, ds.ErrNotFound) {
+			if err = m.datastore.Put(key, event.Body()); err != nil {
+				return err
+			}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		patchedValue, err := jsonpatch.MergePatch(value, op.JSONPatch)
+		if err != nil {
+			return fmt.Errorf("error when patching value: %v", err)
+		}
+		if err = m.datastore.Put(key, patchedValue); err != nil {
+			return err
+		}
+	case delete:
+		if err := m.datastore.Delete(key); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown operation %s", op.Type)
+	}
 	return nil
 }
 
@@ -69,13 +119,14 @@ type Txn struct {
 	model     *Model
 	discarded bool
 	commited  bool
+	readonly  bool
 	ops       map[ds.Key]operation
 }
 
 type operation struct {
-	opType    operationType
-	entityID  string
-	jsonPatch []byte
+	Type      operationType
+	EntityID  string
+	JSONPatch []byte
 }
 
 func (t *Txn) Discard() {
@@ -87,10 +138,13 @@ func (t *Txn) Commit() error {
 		return fmt.Errorf("can't commit discarded/commited txn")
 	}
 	now := time.Now()
-
 	//  ToDo/Important: As first approximation, each key change is a separate event
 	for _, op := range t.ops {
-		event := eventstore.NewJsonPatchEvent(now, op.entityID, t.model.schema.Ref, op.jsonPatch)
+		opBytes, err := json.Marshal(op)
+		if err != nil {
+			return err
+		}
+		event := eventstore.NewJsonPatchEvent(now, op.EntityID, t.model.schema.Ref, opBytes)
 		if err := t.model.dispatcher.Dispatch(event); err != nil {
 			return err // Ugh! partial failure, think about what this means for application state
 		}
@@ -99,6 +153,9 @@ func (t *Txn) Commit() error {
 }
 
 func (t *Txn) Add(id string, new interface{}) error {
+	if t.readonly {
+		return ErrReadonlyTx
+	}
 	key := ds.NewKey(id)
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
@@ -111,15 +168,19 @@ func (t *Txn) Add(id string, new interface{}) error {
 	if err != nil {
 		return err
 	}
-	t.ops[key] = operation{opType: upsert, jsonPatch: newBytes}
+	t.ops[key] = operation{Type: upsert, EntityID: id, JSONPatch: newBytes}
 	return nil
 }
 
 func (t *Txn) Save(id string, updated interface{}) error {
+	if t.readonly {
+		return ErrReadonlyTx
+	}
+
 	key := ds.NewKey(id)
 	actual, err := t.model.datastore.Get(key)
 	if err == ds.ErrNotFound {
-		return fmt.Errorf("can't save non-existing instance id:%s", id)
+		return fmt.Errorf("can't save unkown instance id:%s", id)
 	}
 	if err != nil {
 		return err
@@ -132,7 +193,7 @@ func (t *Txn) Save(id string, updated interface{}) error {
 	if err != nil {
 		return err
 	}
-	t.ops[key] = operation{opType: upsert, jsonPatch: jsonPatch}
+	t.ops[key] = operation{Type: upsert, EntityID: id, JSONPatch: jsonPatch}
 	return nil
 }
 
@@ -145,7 +206,7 @@ func (t *Txn) Delete(id string) error {
 	if !exists {
 		return fmt.Errorf("can't remove since doesn't exist: %s", id)
 	}
-	t.ops[key] = operation{opType: delete}
+	t.ops[key] = operation{Type: delete}
 	return nil
 }
 
