@@ -33,7 +33,7 @@ func NewStore(ds ds.Datastore, dispatcher *eventstore.Dispatcher) *Store {
 func (s *Store) Register(name string, t interface{}) (*Model, error) {
 	valueType := reflect.TypeOf(t)
 	if _, ok := s.models[valueType]; ok {
-		return nil, fmt.Errorf("model already registered")
+		return nil, fmt.Errorf("already registered model")
 	}
 
 	baseKey := ds.NewKey("/model/").ChildString(name)
@@ -61,7 +61,7 @@ func (s *Store) Register(name string, t interface{}) (*Model, error) {
 	m.dispatcherToken = regToken
 
 	actualJSON, _ := json.MarshalIndent(m.schema, "", "  ")
-	log.Debug("registered model: %s", string(actualJSON))
+	log.Debugf("registered model %q: %s", name, string(actualJSON))
 
 	return m, nil
 }

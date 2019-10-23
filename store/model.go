@@ -71,47 +71,50 @@ func (m *Model) FindByID(id string, v interface{}) error {
 	return json.Unmarshal(bytes, v)
 }
 
-func (m *Model) Reduce(event eventstore.Event) error {
+func (m *Model) Reduce(event eventstore.Event) (err error) {
 	log.Debugf("reducer %s start", m.schema.Ref)
-	defer log.Debugf("reducer %s end", m.schema.Ref)
-
+	defer log.Debugf("reducer %s end with err: %v", m.schema.Ref, err)
 	if event.Type() != m.schema.Ref {
 		log.Debugf("ignoring event from uninteresting type")
 		return nil
 	}
 	var op operation
-	err := json.Unmarshal(event.Body(), &op)
+	err = json.Unmarshal(event.Body(), &op)
 	if err != nil {
-		return err
+		return
 	}
 
 	key := ds.NewKey(event.EntityID())
 	switch op.Type {
 	case upsert:
-		value, err := m.datastore.Get(key)
+		var value, patchedValue []byte
+		value, err = m.datastore.Get(key)
 		if errors.Is(err, ds.ErrNotFound) {
 			if err = m.datastore.Put(key, event.Body()); err != nil {
-				return err
+				return
 			}
-			return nil
+			return
 		}
 		if err != nil {
-			return err
+			return
 		}
-		patchedValue, err := jsonpatch.MergePatch(value, op.JSONPatch)
+		patchedValue, err = jsonpatch.MergePatch(value, op.JSONPatch)
 		if err != nil {
 			return fmt.Errorf("error when patching value: %v", err)
 		}
 		if err = m.datastore.Put(key, patchedValue); err != nil {
-			return err
+			return
 		}
+		log.Debug("\tupsert operation applied")
 	case delete:
-		if err := m.datastore.Delete(key); err != nil {
-			return err
+		if err = m.datastore.Delete(key); err != nil {
+			return
 		}
+		log.Debug("\tdelete operation applied")
 	default:
 		return fmt.Errorf("unknown operation %s", op.Type)
 	}
+
 	return nil
 }
 
