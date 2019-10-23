@@ -149,30 +149,47 @@ func TestUpdateInstance(t *testing.T) {
 	}
 }
 
+// Skipped
 func TestDeleteInstance(t *testing.T) {
 	t.SkipNow() // ToDo
 	t.Parallel()
 
-	store := NewStore(ds.NewMapDatastore())
-	model, err := store.Register("Person", &Person{})
-	checkErr(t, err)
+	t.Run("Success", func(t *testing.T) {
+		store := NewStore(ds.NewMapDatastore())
+		model, err := store.Register("Person", &Person{})
+		checkErr(t, err)
 
-	id := uuid.New().String()
-	err = model.Update(func(txn *Txn) error {
-		newPerson := &Person{ID: id, Name: "Alice", Age: 42}
-		return txn.Add(newPerson.ID, newPerson)
+		id := uuid.New().String()
+		err = model.Update(func(txn *Txn) error {
+			newPerson := &Person{ID: id, Name: "Alice", Age: 42}
+			return txn.Add(newPerson.ID, newPerson)
+		})
+		checkErr(t, err)
+
+		err = model.Update(func(txn *Txn) error {
+			return txn.Delete(id)
+		})
+		checkErr(t, err)
+
+		err = model.FindByID(id, &Person{})
+		if err != ErrNotFound {
+			t.Fatalf("instance shouldn't exist")
+		}
 	})
-	checkErr(t, err)
 
-	err = model.Update(func(txn *Txn) error {
-		return txn.Delete(id)
+	t.Run("NonExistent", func(t *testing.T) {
+		// ToDo
 	})
-	checkErr(t, err)
+}
 
-	err = model.FindByID(id, &Person{})
-	if err != ErrNotFound {
-		t.Fatalf("instance shouldn't exist")
-	}
+// ToDo
+func TestInvalidActions(t *testing.T) {
+	t.Run("Add", func(t *testing.T) {
+		// Compared to schema
+	})
+	t.Run("Update", func(t *testing.T) {
+		// Compared to schema
+	})
 }
 
 func checkErr(t *testing.T, err error) {
