@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	ds "github.com/ipfs/go-datastore"
-	logging "github.com/ipfs/go-log"
 	"github.com/textileio/go-eventstore"
 )
 
@@ -31,7 +30,7 @@ type Comment struct {
 }
 
 func TestMain(m *testing.M) {
-	logging.SetLogLevel("*", "debug")
+	//logging.SetLogLevel("*", "debug")
 	os.Exit(m.Run())
 }
 
@@ -40,14 +39,14 @@ func TestSchemaRegistration(t *testing.T) {
 
 	t.Run("Single", func(t *testing.T) {
 		t.Parallel()
-		store := NewStore(ds.NewMapDatastore())
+		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
 
 		_, err := store.Register("Dog", &Dog{})
 		checkErr(t, err)
 	})
 	t.Run("Multiple", func(t *testing.T) {
 		t.Parallel()
-		store := NewStore(ds.NewMapDatastore())
+		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
 
 		_, err := store.Register("Dog", &Dog{})
 		checkErr(t, err)
@@ -65,7 +64,7 @@ func TestAddGetInstance(t *testing.T) {
 	t.Run("Single", func(t *testing.T) {
 		t.Parallel()
 
-		store := NewStore(ds.NewMapDatastore())
+		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
 		model, err := store.Register("Person", &Person{})
 		checkErr(t, err)
 
@@ -100,7 +99,7 @@ func TestAddGetInstance(t *testing.T) {
 		t.Run("InSingleTx", func(t *testing.T) {
 			t.Parallel()
 
-			store := NewStore(ds.NewMapDatastore())
+			store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
 			model, err := store.Register("Person", &Person{})
 			checkErr(t, err)
 
@@ -135,8 +134,7 @@ func TestAddGetInstance(t *testing.T) {
 func TestUpdateInstance(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := eventstore.NewDispatcher(eventstore.NewTxMapDatastore())
-	store := NewStore(ds.NewMapDatastore(), dispatcher)
+	store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
 	model, err := store.Register("Person", &Person{})
 	checkErr(t, err)
 
@@ -174,7 +172,7 @@ func TestDeleteInstance(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Success", func(t *testing.T) {
-		store := NewStore(ds.NewMapDatastore())
+		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
 		model, err := store.Register("Person", &Person{})
 		checkErr(t, err)
 

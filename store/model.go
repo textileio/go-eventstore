@@ -209,7 +209,7 @@ func (t *Txn) Delete(id string) error {
 	if !exists {
 		return fmt.Errorf("can't remove since doesn't exist: %s", id)
 	}
-	t.ops[key] = operation{Type: delete}
+	t.ops[key] = operation{Type: delete, EntityID: id}
 	return nil
 }
 
