@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	logging "github.com/ipfs/go-log"
 	"github.com/google/uuid"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/textileio/go-eventstore"
@@ -30,7 +31,7 @@ type Comment struct {
 }
 
 func TestMain(m *testing.M) {
-	//logging.SetLogLevel("*", "debug")
+	logging.SetLogLevel("*", "debug")
 	os.Exit(m.Run())
 }
 

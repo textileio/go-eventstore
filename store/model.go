@@ -93,6 +93,7 @@ func (m *Model) Reduce(event eventstore.Event) (err error) {
 			if err = m.datastore.Put(key, op.JSONPatch); err != nil {
 				return
 			}
+			log.Debug("\tinsert operation applied")
 			return
 		}
 		if err != nil {
@@ -105,7 +106,7 @@ func (m *Model) Reduce(event eventstore.Event) (err error) {
 		if err = m.datastore.Put(key, patchedValue); err != nil {
 			return
 		}
-		log.Debug("\tupsert operation applied")
+		log.Debug("\tupdate operation applied")
 	case delete:
 		if err = m.datastore.Delete(key); err != nil {
 			return
