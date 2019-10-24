@@ -13,6 +13,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type Reducer interface {
+	Reduce(event Event) error
+}
+
 // @todo: Should we also support a `Transformer` to actually fetch raw event data as part of a pipeline?
 
 // Token is a simple unique ID used to reference a registered callback.
