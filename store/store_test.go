@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"testing"
 
-	logging "github.com/ipfs/go-log"
 	"github.com/google/uuid"
 	ds "github.com/ipfs/go-datastore"
+	logging "github.com/ipfs/go-log"
 	"github.com/textileio/go-eventstore"
 )
 
@@ -41,25 +41,22 @@ func TestSchemaRegistration(t *testing.T) {
 	t.Run("Single", func(t *testing.T) {
 		t.Parallel()
 		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
-
 		_, err := store.Register("Dog", &Dog{})
 		checkErr(t, err)
 	})
 	t.Run("Multiple", func(t *testing.T) {
 		t.Parallel()
 		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
-
 		_, err := store.Register("Dog", &Dog{})
 		checkErr(t, err)
 		_, err = store.Register("Person", &Person{})
 		checkErr(t, err)
-
 		// ToDo: Makes sense some api for store.GetModels()?
 		// if that's the case, can be used here to assert registrations
 	})
 }
 
-func TestAddGetInstance(t *testing.T) {
+func TestAddInstance(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Single", func(t *testing.T) {
@@ -69,65 +66,83 @@ func TestAddGetInstance(t *testing.T) {
 		model, err := store.Register("Person", &Person{})
 		checkErr(t, err)
 
-		newPerson := &Person{ID: uuid.New().String(), Name: "Foo", Age: 42}
-		err = model.Update(func(txn *Txn) error {
-			return txn.Add(newPerson.ID, newPerson)
-		})
-		checkErr(t, err)
-
-		t.Run("WithoutReadTx", func(t *testing.T) {
-			person := &Person{}
-			err = model.FindByID(newPerson.ID, person)
+		t.Run("WithImplicitTx", func(t *testing.T) {
+			newPerson := &Person{ID: uuid.New().String(), Name: "Foo", Age: 42}
+			err = model.Add(newPerson.ID, newPerson)
 			checkErr(t, err)
-			if !reflect.DeepEqual(newPerson, person) {
-				t.Fatalf(errInvalidInstanceState)
-			}
+			assertPersonInModel(t, model, newPerson)
 		})
-		t.Run("WithReadTx", func(t *testing.T) {
-			person := &Person{}
-			err = model.Read(func(txn *Txn) error {
-				txn.FindByID(newPerson.ID, person)
-				checkErr(t, err)
-				if !reflect.DeepEqual(newPerson, person) {
-					t.Fatalf(errInvalidInstanceState)
-				}
-				return nil
+		t.Run("WithTx", func(t *testing.T) {
+			newPerson := &Person{ID: uuid.New().String(), Name: "Foo", Age: 42}
+			err = model.Update(func(txn *Txn) error {
+				return txn.Add(newPerson.ID, newPerson)
 			})
+			checkErr(t, err)
+			assertPersonInModel(t, model, newPerson)
 		})
 	})
 	t.Run("Multiple", func(t *testing.T) {
 		t.Parallel()
-		t.Run("InSingleTx", func(t *testing.T) {
-			t.Parallel()
+		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+		model, err := store.Register("Person", &Person{})
+		checkErr(t, err)
 
-			store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
-			model, err := store.Register("Person", &Person{})
-			checkErr(t, err)
+		newPerson1 := &Person{ID: uuid.New().String(), Name: "Foo1", Age: 42}
+		newPerson2 := &Person{ID: uuid.New().String(), Name: "Foo2", Age: 43}
+		err = model.Update(func(txn *Txn) error {
+			err := txn.Add(newPerson1.ID, newPerson1)
+			if err != nil {
+				return err
+			}
+			return txn.Add(newPerson2.ID, newPerson2)
+		})
+		checkErr(t, err)
+		assertPersonInModel(t, model, newPerson1)
+		assertPersonInModel(t, model, newPerson2)
+	})
+}
 
-			newPerson1 := &Person{ID: uuid.New().String(), Name: "Foo1", Age: 42}
-			newPerson2 := &Person{ID: uuid.New().String(), Name: "Foo2", Age: 43}
-			err = model.Update(func(txn *Txn) error {
-				err := txn.Add(newPerson1.ID, newPerson1)
-				if err != nil {
-					return err
-				}
-				return txn.Add(newPerson2.ID, newPerson2)
-			})
-			checkErr(t, err)
+func TestGetInstance(t *testing.T) {
+	t.Parallel()
 
-			person := &Person{}
-			err = model.FindByID(newPerson1.ID, person)
+	store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+	model, err := store.Register("Person", &Person{})
+	checkErr(t, err)
+
+	newPerson := &Person{ID: uuid.New().String(), Name: "Foo", Age: 42}
+	err = model.Update(func(txn *Txn) error {
+		return txn.Add(newPerson.ID, newPerson)
+	})
+	checkErr(t, err)
+
+	t.Run("WithImplicitTx", func(t *testing.T) {
+		person := &Person{}
+		err = model.FindByID(newPerson.ID, person)
+		checkErr(t, err)
+		if !reflect.DeepEqual(newPerson, person) {
+			t.Fatalf(errInvalidInstanceState)
+		}
+	})
+	t.Run("WithReadTx", func(t *testing.T) {
+		person := &Person{}
+		err = model.Read(func(txn *Txn) error {
+			txn.FindByID(newPerson.ID, person)
 			checkErr(t, err)
-			if !reflect.DeepEqual(newPerson1, person) {
+			if !reflect.DeepEqual(newPerson, person) {
 				t.Fatalf(errInvalidInstanceState)
 			}
-
-			person = &Person{}
-			err = model.FindByID(newPerson2.ID, person)
+			return nil
+		})
+	})
+	t.Run("WithUpdateTx", func(t *testing.T) {
+		person := &Person{}
+		err = model.Update(func(txn *Txn) error {
+			txn.FindByID(newPerson.ID, person)
 			checkErr(t, err)
-			if !reflect.DeepEqual(newPerson2, person) {
+			if !reflect.DeepEqual(newPerson, person) {
 				t.Fatalf(errInvalidInstanceState)
 			}
+			return nil
 		})
 	})
 }
@@ -172,32 +187,31 @@ func TestUpdateInstance(t *testing.T) {
 func TestDeleteInstance(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Success", func(t *testing.T) {
-		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
-		model, err := store.Register("Person", &Person{})
-		checkErr(t, err)
+	store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+	model, err := store.Register("Person", &Person{})
+	checkErr(t, err)
 
-		id := uuid.New().String()
-		err = model.Update(func(txn *Txn) error {
-			newPerson := &Person{ID: id, Name: "Alice", Age: 42}
-			return txn.Add(newPerson.ID, newPerson)
-		})
-		checkErr(t, err)
-
-		err = model.Update(func(txn *Txn) error {
-			return txn.Delete(id)
-		})
-		checkErr(t, err)
-
-		err = model.FindByID(id, &Person{})
-		if err != ErrNotFound {
-			t.Fatalf("instance shouldn't exist")
-		}
+	id := uuid.New().String()
+	err = model.Update(func(txn *Txn) error {
+		newPerson := &Person{ID: id, Name: "Alice", Age: 42}
+		return txn.Add(newPerson.ID, newPerson)
 	})
+	checkErr(t, err)
 
-	t.Run("NonExistent", func(t *testing.T) {
-		// ToDo
-	})
+	err = model.Delete(id)
+	checkErr(t, err)
+
+	if err = model.FindByID(id, &Person{}); err != ErrNotFound {
+		t.Fatalf("FindByID: instance shouldn't exist")
+	}
+	if exist, err := model.Has(id); exist || err != nil {
+		t.Fatalf("Has: instance shouldn't exist")
+	}
+
+	// Try to delete again
+	if err = model.Delete(id); err != ErrNotFound {
+		t.Fatalf("cant't delete non-existent instance")
+	}
 }
 
 // ToDo
@@ -214,5 +228,14 @@ func checkErr(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertPersonInModel(t *testing.T, model *Model, person *Person) {
+	p := &Person{}
+	err := model.FindByID(person.ID, p)
+	checkErr(t, err)
+	if !reflect.DeepEqual(person, p) {
+		t.Fatalf(errInvalidInstanceState)
 	}
 }

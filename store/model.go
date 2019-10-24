@@ -60,56 +60,67 @@ func (m *Model) Update(f func(txn *Txn) error) error {
 }
 
 func (m *Model) FindByID(id string, v interface{}) error {
-	key := ds.NewKey(id)
-	bytes, err := m.datastore.Get(key)
-	if errors.Is(err, ds.ErrNotFound) {
-		return ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(bytes, v)
+	return m.Read(func(txn *Txn) error {
+		return txn.FindByID(id, v)
+	})
 }
 
-func (m *Model) Reduce(event eventstore.Event) (err error) {
+func (m *Model) Add(id string, v interface{}) error {
+	return m.Update(func(txn *Txn) error {
+		return txn.Add(id, v)
+	})
+}
+
+func (m *Model) Delete(id string) error {
+	return m.Update(func(txn *Txn) error {
+		return txn.Delete(id)
+	})
+}
+
+func (m *Model) Has(id string) (exists bool, err error) {
+	m.Read(func(txn *Txn) error {
+		exists, err = txn.Has(id)
+		return err
+	})
+	return
+}
+
+func (m *Model) Reduce(event eventstore.Event) error {
 	log.Debugf("reducer %s start", m.schema.Ref)
-	defer log.Debugf("reducer %s end with err: %v", m.schema.Ref, err)
 	if event.Type() != m.schema.Ref {
 		log.Debugf("ignoring event from uninteresting type")
 		return nil
 	}
 	var op operation
-	err = json.Unmarshal(event.Body(), &op)
-	if err != nil {
-		return
+	if err := json.Unmarshal(event.Body(), &op); err != nil {
+		return err
 	}
 
 	key := ds.NewKey(event.EntityID())
 	switch op.Type {
 	case upsert:
-		var value, patchedValue []byte
-		value, err = m.datastore.Get(key)
+		value, err := m.datastore.Get(key)
 		if errors.Is(err, ds.ErrNotFound) {
 			if err = m.datastore.Put(key, op.JSONPatch); err != nil {
-				return
+				return err
 			}
 			log.Debug("\tinsert operation applied")
-			return
+			return nil
 		}
 		if err != nil {
-			return
+			return err
 		}
-		patchedValue, err = jsonpatch.MergePatch(value, op.JSONPatch)
+		patchedValue, err := jsonpatch.MergePatch(value, op.JSONPatch)
 		if err != nil {
 			return fmt.Errorf("error when patching value: %v", err)
 		}
 		if err = m.datastore.Put(key, patchedValue); err != nil {
-			return
+			return err
 		}
 		log.Debug("\tupdate operation applied")
 	case delete:
-		if err = m.datastore.Delete(key); err != nil {
-			return
+		if err := m.datastore.Delete(key); err != nil {
+			return err
 		}
 		log.Debug("\tdelete operation applied")
 	default:
@@ -141,6 +152,7 @@ func (t *Txn) Commit() error {
 	if t.discarded || t.commited {
 		return fmt.Errorf("can't commit discarded/commited txn")
 	}
+	log.Debugf("commiting txn with %d operations", len(t.ops))
 	now := time.Now()
 	//  ToDo/Important: As first approximation, each key change is a separate event
 	for _, op := range t.ops {
@@ -149,6 +161,7 @@ func (t *Txn) Commit() error {
 			return err
 		}
 		event := eventstore.NewJsonPatchEvent(now, op.EntityID, t.model.schema.Ref, opBytes)
+		log.Debugf("\tdispatching event for key %s", op.EntityID)
 		if err := t.model.dispatcher.Dispatch(event); err != nil {
 			return err // Ugh! partial failure, think about what this means for application state
 		}
@@ -202,18 +215,38 @@ func (t *Txn) Save(id string, updated interface{}) error {
 }
 
 func (t *Txn) Delete(id string) error {
+	if t.readonly {
+		return ErrReadonlyTx
+	}
 	key := ds.NewKey(id)
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("can't remove since doesn't exist: %s", id)
+		return ErrNotFound
 	}
 	t.ops[key] = operation{Type: delete, EntityID: id}
 	return nil
 }
 
+func (t *Txn) Has(id string) (bool, error) {
+	key := ds.NewKey(id)
+	exists, err := t.model.datastore.Has(key)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 func (t *Txn) FindByID(id string, v interface{}) error {
-	return t.model.FindByID(id, v)
+	key := ds.NewKey(id)
+	bytes, err := t.model.datastore.Get(key)
+	if errors.Is(err, ds.ErrNotFound) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(bytes, v)
 }
