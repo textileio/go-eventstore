@@ -4,14 +4,30 @@ import (
 	"bytes"
 	"encoding/binary"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+const (
+	EmptyEntityID = EntityID("")
+)
+
+type EntityID string
+
+func NewEntityID() EntityID {
+	return EntityID(uuid.New().String())
+}
+
+func (e EntityID) String() string {
+	return string(e)
+}
 
 // Event is a generic structure for adding events to the Event Store
 //@todo: Decide on what this should actually look like!
 type Event interface {
 	Body() []byte
 	Time() []byte
-	EntityID() string
+	EntityID() EntityID
 	Type() string
 }
 
@@ -31,7 +47,7 @@ func (n *nullEvent) Time() []byte {
 	return buf.Bytes()
 }
 
-func (n *nullEvent) EntityID() string {
+func (n *nullEvent) EntityID() EntityID {
 	return "null"
 }
 
@@ -44,15 +60,15 @@ var _ Event = (*nullEvent)(nil)
 
 type jsonPatchEvent struct {
 	Timestamp time.Time
-	entityID  string
+	entityID  EntityID
 	TypeName  string
 	Patch     []byte
 }
 
-func NewJsonPatchEvent(t time.Time, entityID, typeName string, patch []byte) Event {
+func NewJsonPatchEvent(t time.Time, id EntityID, typeName string, patch []byte) Event {
 	return jsonPatchEvent{
 		Timestamp: t,
-		entityID:  entityID,
+		entityID:  id,
 		TypeName:  typeName,
 		Patch:     patch,
 	}
@@ -70,7 +86,7 @@ func (je jsonPatchEvent) Time() []byte {
 	return buf.Bytes()
 }
 
-func (je jsonPatchEvent) EntityID() string {
+func (je jsonPatchEvent) EntityID() EntityID {
 	return je.entityID
 }
 

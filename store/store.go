@@ -1,7 +1,7 @@
 package store
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -12,8 +12,15 @@ import (
 	"github.com/textileio/go-eventstore"
 )
 
+const (
+	idFieldName = "ID"
+)
+
 var (
-	log = logging.Logger("store")
+	ErrInvalidModel = errors.New("the model is valid")
+
+	baseKey = ds.NewKey("/model/")
+	log     = logging.Logger("store")
 )
 
 type Store struct {
@@ -31,37 +38,57 @@ func NewStore(ds ds.Datastore, dispatcher *eventstore.Dispatcher) *Store {
 }
 
 func (s *Store) Register(name string, t interface{}) (*Model, error) {
-	valueType := reflect.TypeOf(t)
-	if _, ok := s.models[valueType]; ok {
+	if s.alreadyRegistered(t) {
 		return nil, fmt.Errorf("already registered model")
 	}
+	if !isValidModel(t) {
+		return nil, ErrInvalidModel
+	}
 
-	baseKey := ds.NewKey("/model/").ChildString(name)
+	m := s.createModel(name, t)
+	s.models[m.valueType] = m
+
+	// dbgJSON, _ := json.MarshalIndent(m.schema, "", "  ")
+	// log.Debugf("registered model %q: %s", name, string(dbgJSON))
+
+	return m, nil
+}
+
+func (s *Store) alreadyRegistered(t interface{}) bool {
+	valueType := reflect.TypeOf(t)
+	_, ok := s.models[valueType]
+	return ok
+}
+
+func isValidModel(t interface{}) bool {
+	v := reflect.ValueOf(t)
+	if v.Type().Kind() != reflect.Ptr {
+		v = reflect.New(reflect.TypeOf(v))
+	}
+	return v.Elem().FieldByName(idFieldName).IsValid()
+}
+
+func (s *Store) createModel(name string, t interface{}) *Model {
+	baseModelKey := baseKey.ChildString(name)
 	pair := &kt.Pair{
 		Convert: func(k ds.Key) ds.Key {
-			return baseKey.Child(k)
+			return baseModelKey.Child(k)
 		},
 		Invert: func(k ds.Key) ds.Key {
 			l := k.List()
-			if !k.IsDescendantOf(baseKey) {
-				panic("huh!!") // ToDo
+			if !k.IsDescendantOf(baseModelKey) {
+				panic("huh!!") // ToDo: Reconsider the keytransformation thing. may backfire in queries, see later.
 			}
 			return ds.KeyWithNamespaces(l[2:])
 		},
 	}
-
 	m := &Model{
 		schema:     jsonschema.Reflect(t),
 		datastore:  kt.Wrap(s.datastore, pair), // Make models don't worry about namespaces
-		valueType:  valueType,
+		valueType:  reflect.TypeOf(t),
 		dispatcher: s.dispatcher,
 	}
-	s.models[valueType] = m
-	regToken := s.dispatcher.Register(m)
-	m.dispatcherToken = regToken
+	m.regToken = s.dispatcher.Register(m)
 
-	actualJSON, _ := json.MarshalIndent(m.schema, "", "  ")
-	log.Debugf("registered model %q: %s", name, string(actualJSON))
-
-	return m, nil
+	return m
 }

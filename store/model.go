@@ -17,6 +17,8 @@ import (
 var (
 	ErrNotFound   = errors.New("instance not found")
 	ErrReadonlyTx = errors.New("read only transaction")
+
+	entityID = eventstore.EntityID("")
 )
 
 type operationType string
@@ -27,12 +29,12 @@ const (
 )
 
 type Model struct {
-	lock            sync.RWMutex
-	schema          *jsonschema.Schema
-	valueType       reflect.Type
-	datastore       ds.Datastore
-	dispatcher      *eventstore.Dispatcher
-	dispatcherToken eventstore.Token
+	lock       sync.RWMutex
+	schema     *jsonschema.Schema
+	valueType  reflect.Type
+	datastore  ds.Datastore
+	dispatcher *eventstore.Dispatcher
+	regToken   eventstore.Token
 }
 
 func (m *Model) Read(f func(txn *Txn) error) error {
@@ -59,31 +61,31 @@ func (m *Model) Update(f func(txn *Txn) error) error {
 	return txn.Commit()
 }
 
-func (m *Model) FindByID(id string, v interface{}) error {
+func (m *Model) FindByID(id eventstore.EntityID, v interface{}) error {
 	return m.Read(func(txn *Txn) error {
 		return txn.FindByID(id, v)
 	})
 }
 
-func (m *Model) Add(id string, v interface{}) error {
+func (m *Model) Add(v interface{}) error {
 	return m.Update(func(txn *Txn) error {
-		return txn.Add(id, v)
+		return txn.Add(v)
 	})
 }
 
-func (m *Model) Delete(id string) error {
+func (m *Model) Delete(id eventstore.EntityID) error {
 	return m.Update(func(txn *Txn) error {
 		return txn.Delete(id)
 	})
 }
 
-func (m *Model) Save(id string, v interface{}) error {
+func (m *Model) Save(v interface{}) error {
 	return m.Update(func(txn *Txn) error {
-		return txn.Save(id, v)
+		return txn.Save(v)
 	})
 }
 
-func (m *Model) Has(id string) (exists bool, err error) {
+func (m *Model) Has(id eventstore.EntityID) (exists bool, err error) {
 	m.Read(func(txn *Txn) error {
 		exists, err = txn.Has(id)
 		return err
@@ -102,7 +104,7 @@ func (m *Model) Reduce(event eventstore.Event) error {
 		return err
 	}
 
-	key := ds.NewKey(event.EntityID())
+	key := ds.NewKey(event.EntityID().String())
 	switch op.Type {
 	case upsert:
 		value, err := m.datastore.Get(key)
@@ -146,7 +148,7 @@ type Txn struct {
 
 type operation struct {
 	Type      operationType
-	EntityID  string
+	EntityID  eventstore.EntityID
 	JSONPatch []byte
 }
 
@@ -175,11 +177,15 @@ func (t *Txn) Commit() error {
 	return nil
 }
 
-func (t *Txn) Add(id string, new interface{}) error {
+func (t *Txn) Add(new interface{}) error {
 	if t.readonly {
 		return ErrReadonlyTx
 	}
-	key := ds.NewKey(id)
+	id := getEntityID(new)
+	if id == eventstore.EmptyEntityID {
+		id = setNewEntityID(new)
+	}
+	key := ds.NewKey(id.String())
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
 		return err
@@ -195,12 +201,13 @@ func (t *Txn) Add(id string, new interface{}) error {
 	return nil
 }
 
-func (t *Txn) Save(id string, updated interface{}) error {
+func (t *Txn) Save(updated interface{}) error {
 	if t.readonly {
 		return ErrReadonlyTx
 	}
 
-	key := ds.NewKey(id)
+	id := getEntityID(updated)
+	key := ds.NewKey(id.String())
 	actual, err := t.model.datastore.Get(key)
 	if err == ds.ErrNotFound {
 		return fmt.Errorf("can't save unkown instance id:%s", id)
@@ -220,11 +227,11 @@ func (t *Txn) Save(id string, updated interface{}) error {
 	return nil
 }
 
-func (t *Txn) Delete(id string) error {
+func (t *Txn) Delete(id eventstore.EntityID) error {
 	if t.readonly {
 		return ErrReadonlyTx
 	}
-	key := ds.NewKey(id)
+	key := ds.NewKey(id.String())
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
 		return err
@@ -236,8 +243,8 @@ func (t *Txn) Delete(id string) error {
 	return nil
 }
 
-func (t *Txn) Has(id string) (bool, error) {
-	key := ds.NewKey(id)
+func (t *Txn) Has(id eventstore.EntityID) (bool, error) {
+	key := ds.NewKey(id.String())
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
 		return false, err
@@ -245,8 +252,8 @@ func (t *Txn) Has(id string) (bool, error) {
 	return exists, nil
 }
 
-func (t *Txn) FindByID(id string, v interface{}) error {
-	key := ds.NewKey(id)
+func (t *Txn) FindByID(id eventstore.EntityID, v interface{}) error {
+	key := ds.NewKey(id.String())
 	bytes, err := t.model.datastore.Get(key)
 	if errors.Is(err, ds.ErrNotFound) {
 		return ErrNotFound
@@ -255,4 +262,26 @@ func (t *Txn) FindByID(id string, v interface{}) error {
 		return err
 	}
 	return json.Unmarshal(bytes, v)
+}
+
+func getEntityID(t interface{}) eventstore.EntityID {
+	v := reflect.ValueOf(t)
+	if v.Type().Kind() != reflect.Ptr {
+		v = reflect.New(reflect.TypeOf(v))
+	}
+	v = v.Elem().FieldByName(idFieldName)
+	if !v.IsValid() || v.Type() != reflect.TypeOf(entityID) {
+		panic("invalid instance: doesn't have EntityID attribute")
+	}
+	return eventstore.EntityID(v.String())
+}
+
+func setNewEntityID(t interface{}) eventstore.EntityID {
+	v := reflect.ValueOf(t)
+	if v.Type().Kind() != reflect.Ptr {
+		v = reflect.New(reflect.TypeOf(v))
+	}
+	newID := eventstore.NewEntityID()
+	v.Elem().FieldByName(idFieldName).Set(reflect.ValueOf(newID))
+	return newID
 }

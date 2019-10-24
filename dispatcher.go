@@ -77,7 +77,7 @@ func (d *Dispatcher) Dispatch(event Event) error {
 	defer d.lock.Unlock()
 	// Key format: <timestamp>/<entity-id>/<type>
 	// @todo: This is up for debate, its a 'fake' Event struct right now anyway
-	key := datastore.NewKey(string(event.Time())).ChildString(event.EntityID()).ChildString(event.Type())
+	key := datastore.NewKey(string(event.Time())).ChildString(event.EntityID().String()).ChildString(event.Type())
 	// Encode and add an Event to event store
 	b := bytes.Buffer{}
 	e := gob.NewEncoder(&b)

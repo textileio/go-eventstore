@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/uuid"
 	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log"
 	"github.com/textileio/go-eventstore"
@@ -16,13 +15,13 @@ const (
 )
 
 type Person struct {
-	ID   string
+	ID   eventstore.EntityID
 	Name string
 	Age  int
 }
 
 type Dog struct {
-	ID       string
+	ID       eventstore.EntityID
 	Name     string
 	Comments []Comment
 }
@@ -37,45 +36,50 @@ func TestMain(m *testing.M) {
 
 func TestSchemaRegistration(t *testing.T) {
 	t.Parallel()
-
 	t.Run("Single", func(t *testing.T) {
 		t.Parallel()
-		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+		store := createTestStore()
 		_, err := store.Register("Dog", &Dog{})
 		checkErr(t, err)
 	})
 	t.Run("Multiple", func(t *testing.T) {
 		t.Parallel()
-		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+		store := createTestStore()
 		_, err := store.Register("Dog", &Dog{})
 		checkErr(t, err)
 		_, err = store.Register("Person", &Person{})
 		checkErr(t, err)
-		// ToDo: Makes sense some api for store.GetModels()?
-		// if that's the case, can be used here to assert registrations
+	})
+	t.Run("Fail/WithoutEntityID", func(t *testing.T) {
+		t.Parallel()
+		type FailingModel struct {
+			IDontHaveAnIDField int
+		}
+		store := createTestStore()
+		if _, err := store.Register("FailingModel", &FailingModel{}); err != ErrInvalidModel {
+			t.Fatal("the model should be invalid")
+		}
 	})
 }
 
 func TestAddInstance(t *testing.T) {
 	t.Parallel()
-
 	t.Run("Single", func(t *testing.T) {
 		t.Parallel()
-
-		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+		store := createTestStore()
 		model, err := store.Register("Person", &Person{})
 		checkErr(t, err)
 
 		t.Run("WithImplicitTx", func(t *testing.T) {
-			newPerson := &Person{ID: uuid.New().String(), Name: "Foo", Age: 42}
-			err = model.Add(newPerson.ID, newPerson)
+			newPerson := &Person{Name: "Foo", Age: 42}
+			err = model.Add(newPerson)
 			checkErr(t, err)
 			assertPersonInModel(t, model, newPerson)
 		})
 		t.Run("WithTx", func(t *testing.T) {
-			newPerson := &Person{ID: uuid.New().String(), Name: "Foo", Age: 42}
+			newPerson := &Person{Name: "Foo", Age: 42}
 			err = model.Update(func(txn *Txn) error {
-				return txn.Add(newPerson.ID, newPerson)
+				return txn.Add(newPerson)
 			})
 			checkErr(t, err)
 			assertPersonInModel(t, model, newPerson)
@@ -83,18 +87,18 @@ func TestAddInstance(t *testing.T) {
 	})
 	t.Run("Multiple", func(t *testing.T) {
 		t.Parallel()
-		store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+		store := createTestStore()
 		model, err := store.Register("Person", &Person{})
 		checkErr(t, err)
 
-		newPerson1 := &Person{ID: uuid.New().String(), Name: "Foo1", Age: 42}
-		newPerson2 := &Person{ID: uuid.New().String(), Name: "Foo2", Age: 43}
+		newPerson1 := &Person{Name: "Foo1", Age: 42}
+		newPerson2 := &Person{Name: "Foo2", Age: 43}
 		err = model.Update(func(txn *Txn) error {
-			err := txn.Add(newPerson1.ID, newPerson1)
+			err := txn.Add(newPerson1)
 			if err != nil {
 				return err
 			}
-			return txn.Add(newPerson2.ID, newPerson2)
+			return txn.Add(newPerson2)
 		})
 		checkErr(t, err)
 		assertPersonInModel(t, model, newPerson1)
@@ -105,13 +109,13 @@ func TestAddInstance(t *testing.T) {
 func TestGetInstance(t *testing.T) {
 	t.Parallel()
 
-	store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+	store := createTestStore()
 	model, err := store.Register("Person", &Person{})
 	checkErr(t, err)
 
-	newPerson := &Person{ID: uuid.New().String(), Name: "Foo", Age: 42}
+	newPerson := &Person{Name: "Foo", Age: 42}
 	err = model.Update(func(txn *Txn) error {
-		return txn.Add(newPerson.ID, newPerson)
+		return txn.Add(newPerson)
 	})
 	checkErr(t, err)
 
@@ -150,24 +154,23 @@ func TestGetInstance(t *testing.T) {
 func TestUpdateInstance(t *testing.T) {
 	t.Parallel()
 
-	store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+	store := createTestStore()
 	model, err := store.Register("Person", &Person{})
 	checkErr(t, err)
 
-	id := uuid.New().String()
+	newPerson := &Person{Name: "Alice", Age: 42}
 	err = model.Update(func(txn *Txn) error {
-		newPerson := &Person{ID: id, Name: "Alice", Age: 42}
-		return txn.Add(newPerson.ID, newPerson)
+		return txn.Add(newPerson)
 	})
 	checkErr(t, err)
 
 	err = model.Update(func(txn *Txn) error {
 		p := &Person{}
-		err := txn.FindByID(id, p)
+		err := txn.FindByID(newPerson.ID, p)
 		checkErr(t, err)
 
 		p.Name = "Bob"
-		return txn.Save(p.ID, p)
+		return txn.Save(p)
 	})
 	checkErr(t, err)
 
@@ -177,9 +180,9 @@ func TestUpdateInstance(t *testing.T) {
 	// should make the code below behave as expected
 
 	person := &Person{}
-	err = model.FindByID(id, person)
+	err = model.FindByID(newPerson.ID, person)
 	checkErr(t, err)
-	if person.ID != id || person.Age != 42 || person.Name != "Bob" {
+	if person.ID != newPerson.ID || person.Age != 42 || person.Name != "Bob" {
 		t.Fatalf(errInvalidInstanceState)
 	}
 }
@@ -187,29 +190,28 @@ func TestUpdateInstance(t *testing.T) {
 func TestDeleteInstance(t *testing.T) {
 	t.Parallel()
 
-	store := NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+	store := createTestStore()
 	model, err := store.Register("Person", &Person{})
 	checkErr(t, err)
 
-	id := uuid.New().String()
+	newPerson := &Person{Name: "Alice", Age: 42}
 	err = model.Update(func(txn *Txn) error {
-		newPerson := &Person{ID: id, Name: "Alice", Age: 42}
-		return txn.Add(newPerson.ID, newPerson)
+		return txn.Add(newPerson)
 	})
 	checkErr(t, err)
 
-	err = model.Delete(id)
+	err = model.Delete(newPerson.ID)
 	checkErr(t, err)
 
-	if err = model.FindByID(id, &Person{}); err != ErrNotFound {
+	if err = model.FindByID(newPerson.ID, &Person{}); err != ErrNotFound {
 		t.Fatalf("FindByID: instance shouldn't exist")
 	}
-	if exist, err := model.Has(id); exist || err != nil {
+	if exist, err := model.Has(newPerson.ID); exist || err != nil {
 		t.Fatalf("Has: instance shouldn't exist")
 	}
 
 	// Try to delete again
-	if err = model.Delete(id); err != ErrNotFound {
+	if err = model.Delete(newPerson.ID); err != ErrNotFound {
 		t.Fatalf("cant't delete non-existent instance")
 	}
 }
@@ -232,10 +234,15 @@ func checkErr(t *testing.T, err error) {
 }
 
 func assertPersonInModel(t *testing.T, model *Model, person *Person) {
+	t.Helper()
 	p := &Person{}
 	err := model.FindByID(person.ID, p)
 	checkErr(t, err)
 	if !reflect.DeepEqual(person, p) {
 		t.Fatalf(errInvalidInstanceState)
 	}
+}
+
+func createTestStore() *Store {
+	return NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
 }
