@@ -37,7 +37,7 @@ type Model struct {
 	regToken   eventstore.Token
 }
 
-func (m *Model) Read(f func(txn *Txn) error) error {
+func (m *Model) ReadTxn(f func(txn *Txn) error) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -49,7 +49,7 @@ func (m *Model) Read(f func(txn *Txn) error) error {
 	return nil
 }
 
-func (m *Model) Update(f func(txn *Txn) error) error {
+func (m *Model) WriteTxn(f func(txn *Txn) error) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -62,31 +62,31 @@ func (m *Model) Update(f func(txn *Txn) error) error {
 }
 
 func (m *Model) FindByID(id eventstore.EntityID, v interface{}) error {
-	return m.Read(func(txn *Txn) error {
+	return m.ReadTxn(func(txn *Txn) error {
 		return txn.FindByID(id, v)
 	})
 }
 
 func (m *Model) Add(v interface{}) error {
-	return m.Update(func(txn *Txn) error {
+	return m.WriteTxn(func(txn *Txn) error {
 		return txn.Add(v)
 	})
 }
 
 func (m *Model) Delete(id eventstore.EntityID) error {
-	return m.Update(func(txn *Txn) error {
+	return m.WriteTxn(func(txn *Txn) error {
 		return txn.Delete(id)
 	})
 }
 
 func (m *Model) Save(v interface{}) error {
-	return m.Update(func(txn *Txn) error {
+	return m.WriteTxn(func(txn *Txn) error {
 		return txn.Save(v)
 	})
 }
 
 func (m *Model) Has(id eventstore.EntityID) (exists bool, err error) {
-	m.Read(func(txn *Txn) error {
+	m.ReadTxn(func(txn *Txn) error {
 		exists, err = txn.Has(id)
 		return err
 	})

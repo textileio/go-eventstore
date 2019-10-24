@@ -78,7 +78,7 @@ func TestAddInstance(t *testing.T) {
 		})
 		t.Run("WithTx", func(t *testing.T) {
 			newPerson := &Person{Name: "Foo", Age: 42}
-			err = model.Update(func(txn *Txn) error {
+			err = model.WriteTxn(func(txn *Txn) error {
 				return txn.Add(newPerson)
 			})
 			checkErr(t, err)
@@ -93,7 +93,7 @@ func TestAddInstance(t *testing.T) {
 
 		newPerson1 := &Person{Name: "Foo1", Age: 42}
 		newPerson2 := &Person{Name: "Foo2", Age: 43}
-		err = model.Update(func(txn *Txn) error {
+		err = model.WriteTxn(func(txn *Txn) error {
 			err := txn.Add(newPerson1)
 			if err != nil {
 				return err
@@ -114,7 +114,7 @@ func TestGetInstance(t *testing.T) {
 	checkErr(t, err)
 
 	newPerson := &Person{Name: "Foo", Age: 42}
-	err = model.Update(func(txn *Txn) error {
+	err = model.WriteTxn(func(txn *Txn) error {
 		return txn.Add(newPerson)
 	})
 	checkErr(t, err)
@@ -129,7 +129,7 @@ func TestGetInstance(t *testing.T) {
 	})
 	t.Run("WithReadTx", func(t *testing.T) {
 		person := &Person{}
-		err = model.Read(func(txn *Txn) error {
+		err = model.ReadTxn(func(txn *Txn) error {
 			txn.FindByID(newPerson.ID, person)
 			checkErr(t, err)
 			if !reflect.DeepEqual(newPerson, person) {
@@ -140,7 +140,7 @@ func TestGetInstance(t *testing.T) {
 	})
 	t.Run("WithUpdateTx", func(t *testing.T) {
 		person := &Person{}
-		err = model.Update(func(txn *Txn) error {
+		err = model.WriteTxn(func(txn *Txn) error {
 			txn.FindByID(newPerson.ID, person)
 			checkErr(t, err)
 			if !reflect.DeepEqual(newPerson, person) {
@@ -159,12 +159,12 @@ func TestUpdateInstance(t *testing.T) {
 	checkErr(t, err)
 
 	newPerson := &Person{Name: "Alice", Age: 42}
-	err = model.Update(func(txn *Txn) error {
+	err = model.WriteTxn(func(txn *Txn) error {
 		return txn.Add(newPerson)
 	})
 	checkErr(t, err)
 
-	err = model.Update(func(txn *Txn) error {
+	err = model.WriteTxn(func(txn *Txn) error {
 		p := &Person{}
 		err := txn.FindByID(newPerson.ID, p)
 		checkErr(t, err)
@@ -195,7 +195,7 @@ func TestDeleteInstance(t *testing.T) {
 	checkErr(t, err)
 
 	newPerson := &Person{Name: "Alice", Age: 42}
-	err = model.Update(func(txn *Txn) error {
+	err = model.WriteTxn(func(txn *Txn) error {
 		return txn.Add(newPerson)
 	})
 	checkErr(t, err)
