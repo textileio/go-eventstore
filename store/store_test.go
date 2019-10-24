@@ -79,7 +79,7 @@ func TestAddInstance(t *testing.T) {
 		t.Run("WithTx", func(t *testing.T) {
 			newPerson := &Person{Name: "Foo", Age: 42}
 			err = model.WriteTxn(func(txn *Txn) error {
-				return txn.Add(newPerson)
+				return txn.Create(newPerson)
 			})
 			checkErr(t, err)
 			assertPersonInModel(t, model, newPerson)
@@ -94,11 +94,11 @@ func TestAddInstance(t *testing.T) {
 		newPerson1 := &Person{Name: "Foo1", Age: 42}
 		newPerson2 := &Person{Name: "Foo2", Age: 43}
 		err = model.WriteTxn(func(txn *Txn) error {
-			err := txn.Add(newPerson1)
+			err := txn.Create(newPerson1)
 			if err != nil {
 				return err
 			}
-			return txn.Add(newPerson2)
+			return txn.Create(newPerson2)
 		})
 		checkErr(t, err)
 		assertPersonInModel(t, model, newPerson1)
@@ -115,7 +115,7 @@ func TestGetInstance(t *testing.T) {
 
 	newPerson := &Person{Name: "Foo", Age: 42}
 	err = model.WriteTxn(func(txn *Txn) error {
-		return txn.Add(newPerson)
+		return txn.Create(newPerson)
 	})
 	checkErr(t, err)
 
@@ -160,7 +160,7 @@ func TestUpdateInstance(t *testing.T) {
 
 	newPerson := &Person{Name: "Alice", Age: 42}
 	err = model.WriteTxn(func(txn *Txn) error {
-		return txn.Add(newPerson)
+		return txn.Create(newPerson)
 	})
 	checkErr(t, err)
 
@@ -196,7 +196,7 @@ func TestDeleteInstance(t *testing.T) {
 
 	newPerson := &Person{Name: "Alice", Age: 42}
 	err = model.WriteTxn(func(txn *Txn) error {
-		return txn.Add(newPerson)
+		return txn.Create(newPerson)
 	})
 	checkErr(t, err)
 
