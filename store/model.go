@@ -69,7 +69,7 @@ func (m *Model) FindByID(id eventstore.EntityID, v interface{}) error {
 
 func (m *Model) Add(v interface{}) error {
 	return m.WriteTxn(func(txn *Txn) error {
-		return txn.Add(v)
+		return txn.Create(v)
 	})
 }
 
@@ -177,7 +177,7 @@ func (t *Txn) Commit() error {
 	return nil
 }
 
-func (t *Txn) Add(new interface{}) error {
+func (t *Txn) Create(new interface{}) error {
 	if t.readonly {
 		return ErrReadonlyTx
 	}

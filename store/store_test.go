@@ -104,6 +104,9 @@ func TestAddInstance(t *testing.T) {
 		assertPersonInModel(t, model, newPerson1)
 		assertPersonInModel(t, model, newPerson2)
 	})
+
+	// ToDo: Add test for `.Create` on an instance with an
+	// assigned ID (shouldn't be overwritten)
 }
 
 func TestGetInstance(t *testing.T) {
