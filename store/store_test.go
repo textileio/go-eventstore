@@ -62,7 +62,7 @@ func TestSchemaRegistration(t *testing.T) {
 	})
 }
 
-func TestAddInstance(t *testing.T) {
+func TestCreateInstance(t *testing.T) {
 	t.Parallel()
 	t.Run("Single", func(t *testing.T) {
 		t.Parallel()

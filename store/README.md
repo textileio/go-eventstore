@@ -3,13 +3,13 @@
 A `Model` has the concept of explicit and implicit transactions, which can be readonly 
 or allow writes.
 
-## Examples
-Here're some examples to understand a bit more.
-
 ### Model IDs
 The idea is that every `struct` that will be registered as a model, should have a 
 property named `ID` with type `eventstore.EntityID`. When registering the model 
 this will be enforced, and will be automatically generated if has an empty value. 
+
+## Examples
+Here're some examples to understand a bit more.
 
 ### Implicit transactions
 Under the hood creates a transaction to execute the action:
