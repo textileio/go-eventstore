@@ -8,11 +8,12 @@ import (
 
 	"github.com/alecthomas/jsonschema"
 	ds "github.com/ipfs/go-datastore"
-	kt "github.com/ipfs/go-datastore/keytransform"
 	es "github.com/textileio/go-eventstore"
 )
 
 var (
+	baseKey = ds.NewKey("/model/")
+
 	ErrNotFound   = errors.New("instance not found")
 	ErrReadonlyTx = errors.New("read only transaction")
 
@@ -28,28 +29,17 @@ type Model struct {
 	datastore    ds.Datastore
 	eventcreator es.EventCreator
 	dispatcher   *es.Dispatcher
+	dsKey        ds.Key
 }
 
-func NewModel(name string, t interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCreator) *Model {
-	baseModelKey := baseKey.ChildString(name)
-	pair := &kt.Pair{
-		Convert: func(k ds.Key) ds.Key {
-			return baseModelKey.Child(k)
-		},
-		Invert: func(k ds.Key) ds.Key {
-			l := k.List()
-			if !k.IsDescendantOf(baseModelKey) {
-				panic("huh!!") // ToDo: Reconsider the keytransformation thing. may backfire in queries, see later.
-			}
-			return ds.KeyWithNamespaces(l[2:])
-		},
-	}
+func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCreator) *Model {
 	m := &Model{
-		schema:       jsonschema.Reflect(t),
-		datastore:    kt.Wrap(datastore, pair), // Make models don't worry about namespaces
-		valueType:    reflect.TypeOf(t),
+		schema:       jsonschema.Reflect(defaultInstance),
+		datastore:    datastore,
+		valueType:    reflect.TypeOf(defaultInstance),
 		dispatcher:   dispatcher,
 		eventcreator: eventcreator,
+		dsKey:        baseKey.ChildString(name),
 	}
 
 	return m
@@ -133,7 +123,7 @@ func (t *Txn) Create(new interface{}) error {
 	if id == es.EmptyEntityID {
 		id = setNewEntityID(new)
 	}
-	key := ds.NewKey(id.String())
+	key := t.model.dsKey.ChildString(id.String())
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
 		return err
@@ -160,7 +150,7 @@ func (t *Txn) Save(updated interface{}) error {
 	}
 
 	id := getEntityID(updated)
-	key := ds.NewKey(id.String())
+	key := t.model.dsKey.ChildString(id.String())
 	beforeBytes, err := t.model.datastore.Get(key)
 	if err == ds.ErrNotFound {
 		return errCantSaveNonExistentInstance
@@ -190,7 +180,7 @@ func (t *Txn) Delete(id es.EntityID) error {
 	if t.readonly {
 		return ErrReadonlyTx
 	}
-	key := ds.NewKey(id.String())
+	key := t.model.dsKey.ChildString(id.String())
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
 		return err
@@ -210,7 +200,7 @@ func (t *Txn) Delete(id es.EntityID) error {
 }
 
 func (t *Txn) Has(id es.EntityID) (bool, error) {
-	key := ds.NewKey(id.String())
+	key := t.model.dsKey.ChildString(id.String())
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
 		return false, err
@@ -219,7 +209,7 @@ func (t *Txn) Has(id es.EntityID) (bool, error) {
 }
 
 func (t *Txn) FindByID(id es.EntityID, v interface{}) error {
-	key := ds.NewKey(id.String())
+	key := t.model.dsKey.ChildString(id.String())
 	bytes, err := t.model.datastore.Get(key)
 	if errors.Is(err, ds.ErrNotFound) {
 		return ErrNotFound
@@ -242,7 +232,7 @@ func (t *Txn) Commit() error {
 
 	for _, e := range events {
 		if err := t.model.dispatcher.Dispatch(e); err != nil {
-			return err // Note: Important to document the implications of a partial dispatch
+			return err // ToDo/Note: Important to document the implications of a partial dispatch
 		}
 	}
 	return nil
@@ -254,7 +244,8 @@ func (m *Model) Reduce(event es.Event) error {
 		log.Debugf("ignoring event from uninteresting type")
 		return nil
 	}
-	return m.eventcreator.Reduce(event, m.datastore)
+
+	return m.eventcreator.Reduce(event, m.datastore, m.dsKey)
 }
 
 func (t *Txn) Discard() {

@@ -27,7 +27,7 @@ type Action struct {
 }
 
 type EventCreator interface {
-	Reduce(event Event, datastore ds.Datastore) error
+	Reduce(e Event, datastore ds.Datastore, baseKey ds.Key) error
 	// Create corresponding events to be dispatched
 	Create(ops []Action) ([]Event, error)
 }

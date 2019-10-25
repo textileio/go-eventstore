@@ -72,13 +72,13 @@ func (m *patcher) Create(actions []es.Action) ([]es.Event, error) {
 	return events, nil
 }
 
-func (m *patcher) Reduce(event es.Event, datastore ds.Datastore) error {
+func (p *patcher) Reduce(e es.Event, datastore ds.Datastore, baseKey ds.Key) error {
 	var op operation
-	if err := json.Unmarshal(event.Body(), &op); err != nil {
+	if err := json.Unmarshal(e.Body(), &op); err != nil {
 		return err
 	}
 
-	key := ds.NewKey(event.EntityID().String())
+	key := baseKey.ChildString(e.EntityID().String())
 	switch op.Type {
 	case create:
 		exist, err := datastore.Has(key)
@@ -201,3 +201,5 @@ func (je patchEvent) EntityID() es.EntityID {
 func (je patchEvent) Type() string {
 	return je.TypeName
 }
+
+var _ es.Event = (*patchEvent)(nil)

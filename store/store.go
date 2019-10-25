@@ -8,6 +8,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log"
 	es "github.com/textileio/go-eventstore"
+	"github.com/textileio/go-eventstore/jsonpatcher"
 )
 
 const (
@@ -17,39 +18,38 @@ const (
 var (
 	ErrInvalidModel = errors.New("the model is valid")
 
-	baseKey = ds.NewKey("/model/")
-	log     = logging.Logger("store")
+	log = logging.Logger("store")
 )
 
 type Store struct {
-	datastore    ds.Datastore
-	dispatcher   *es.Dispatcher
-	eventcreator es.EventCreator
-	models       map[reflect.Type]*Model
+	datastore  ds.Datastore
+	dispatcher *es.Dispatcher
+	models     map[reflect.Type]*Model
 }
 
-func NewStore(ds ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCreator) *Store {
+func NewStore(ds ds.Datastore, dispatcher *es.Dispatcher) *Store {
 	return &Store{
-		datastore:    ds,
-		dispatcher:   dispatcher,
-		models:       make(map[reflect.Type]*Model),
-		eventcreator: eventcreator,
+		datastore:  ds,
+		dispatcher: dispatcher,
+		models:     make(map[reflect.Type]*Model),
 	}
 }
 
-func (s *Store) Register(name string, t interface{}) (*Model, error) {
-	if s.alreadyRegistered(t) {
+func (s *Store) RegisterJSONPatcher(name string, defaultInstance interface{}) (*Model, error) {
+	if s.alreadyRegistered(defaultInstance) {
 		return nil, fmt.Errorf("already registered model")
 	}
 
-	if !isValidModel(t) {
+	if !isValidModel(defaultInstance) {
 		return nil, ErrInvalidModel
 	}
 
-	m := NewModel(name, t, s.datastore, s.dispatcher, s.eventcreator)
+	eventcreator := jsonpatcher.New()
+	m := NewModel(name, defaultInstance, s.datastore, s.dispatcher, eventcreator)
 	s.models[m.valueType] = m
 	s.dispatcher.Register(m) // ToDo: find good place for reg token, prob will register eventcreator
 
+	// Debug
 	// dbgJSON, _ := json.MarshalIndent(m.schema, "", "  ")
 	// log.Debugf("registered model %q: %s", name, string(dbgJSON))
 
