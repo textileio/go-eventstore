@@ -239,6 +239,7 @@ func (t *Txn) Commit() error {
 }
 
 func (m *Model) Reduce(event es.Event) error {
+	// ToDo: distinguish local and remote events for proper locking
 	log.Debugf("reducer %s start", m.schema.Ref)
 	if event.Type() != m.schema.Ref {
 		log.Debugf("ignoring event from uninteresting type")
