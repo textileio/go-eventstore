@@ -7,7 +7,8 @@ import (
 
 	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log"
-	"github.com/textileio/go-eventstore"
+	es "github.com/textileio/go-eventstore"
+	"github.com/textileio/go-eventstore/jsonpatcher"
 )
 
 const (
@@ -15,13 +16,13 @@ const (
 )
 
 type Person struct {
-	ID   eventstore.EntityID
+	ID   es.EntityID
 	Name string
 	Age  int
 }
 
 type Dog struct {
-	ID       eventstore.EntityID
+	ID       es.EntityID
 	Name     string
 	Comments []Comment
 }
@@ -247,5 +248,8 @@ func assertPersonInModel(t *testing.T, model *Model, person *Person) {
 }
 
 func createTestStore() *Store {
-	return NewStore(ds.NewMapDatastore(), eventstore.NewDispatcher(eventstore.NewTxMapDatastore()))
+	datastore := ds.NewMapDatastore()
+	dispatcher := es.NewDispatcher(es.NewTxMapDatastore())
+	jsonPatcher := jsonpatcher.New()
+	return NewStore(datastore, dispatcher, jsonPatcher)
 }

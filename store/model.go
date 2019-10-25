@@ -3,45 +3,63 @@ package store
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"reflect"
 	"sync"
-	"time"
 
 	"github.com/alecthomas/jsonschema"
-	jsonpatch "github.com/evanphx/json-patch"
 	ds "github.com/ipfs/go-datastore"
-	"github.com/textileio/go-eventstore"
+	kt "github.com/ipfs/go-datastore/keytransform"
+	es "github.com/textileio/go-eventstore"
 )
 
 var (
 	ErrNotFound   = errors.New("instance not found")
 	ErrReadonlyTx = errors.New("read only transaction")
 
-	entityID = eventstore.EntityID("")
-)
-
-type operationType string
-
-const (
-	upsert operationType = "upsert"
-	delete operationType = "delete"
+	errAlreadyDiscardedCommitedTxn = errors.New("can't commit discarded/commited txn")
+	errCantCreateExistingInstance  = errors.New("can't create already existing instance")
+	errCantSaveNonExistentInstance = errors.New("can't save unkown instance")
 )
 
 type Model struct {
-	lock       sync.RWMutex
-	schema     *jsonschema.Schema
-	valueType  reflect.Type
-	datastore  ds.Datastore
-	dispatcher *eventstore.Dispatcher
-	regToken   eventstore.Token
+	lock         sync.RWMutex
+	schema       *jsonschema.Schema
+	valueType    reflect.Type
+	datastore    ds.Datastore
+	eventcreator es.EventCreator
+	dispatcher   *es.Dispatcher
+}
+
+func NewModel(name string, t interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCreator) *Model {
+	baseModelKey := baseKey.ChildString(name)
+	pair := &kt.Pair{
+		Convert: func(k ds.Key) ds.Key {
+			return baseModelKey.Child(k)
+		},
+		Invert: func(k ds.Key) ds.Key {
+			l := k.List()
+			if !k.IsDescendantOf(baseModelKey) {
+				panic("huh!!") // ToDo: Reconsider the keytransformation thing. may backfire in queries, see later.
+			}
+			return ds.KeyWithNamespaces(l[2:])
+		},
+	}
+	m := &Model{
+		schema:       jsonschema.Reflect(t),
+		datastore:    kt.Wrap(datastore, pair), // Make models don't worry about namespaces
+		valueType:    reflect.TypeOf(t),
+		dispatcher:   dispatcher,
+		eventcreator: eventcreator,
+	}
+
+	return m
 }
 
 func (m *Model) ReadTxn(f func(txn *Txn) error) error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+	m.lock.RLock()
+	defer m.lock.RUnlock()
 
-	txn := &Txn{model: m, readonly: true, ops: make(map[ds.Key]operation)}
+	txn := &Txn{model: m, readonly: true}
 	defer txn.Discard()
 	if err := f(txn); err != nil {
 		return err
@@ -53,7 +71,7 @@ func (m *Model) WriteTxn(f func(txn *Txn) error) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	txn := &Txn{model: m, ops: make(map[ds.Key]operation)}
+	txn := &Txn{model: m}
 	defer txn.Discard()
 	if err := f(txn); err != nil {
 		return err
@@ -61,7 +79,7 @@ func (m *Model) WriteTxn(f func(txn *Txn) error) error {
 	return txn.Commit()
 }
 
-func (m *Model) FindByID(id eventstore.EntityID, v interface{}) error {
+func (m *Model) FindByID(id es.EntityID, v interface{}) error {
 	return m.ReadTxn(func(txn *Txn) error {
 		return txn.FindByID(id, v)
 	})
@@ -73,7 +91,7 @@ func (m *Model) Add(v interface{}) error {
 	})
 }
 
-func (m *Model) Delete(id eventstore.EntityID) error {
+func (m *Model) Delete(id es.EntityID) error {
 	return m.WriteTxn(func(txn *Txn) error {
 		return txn.Delete(id)
 	})
@@ -85,7 +103,7 @@ func (m *Model) Save(v interface{}) error {
 	})
 }
 
-func (m *Model) Has(id eventstore.EntityID) (exists bool, err error) {
+func (m *Model) Has(id es.EntityID) (exists bool, err error) {
 	m.ReadTxn(func(txn *Txn) error {
 		exists, err = txn.Has(id)
 		return err
@@ -93,88 +111,18 @@ func (m *Model) Has(id eventstore.EntityID) (exists bool, err error) {
 	return
 }
 
-func (m *Model) Reduce(event eventstore.Event) error {
-	log.Debugf("reducer %s start", m.schema.Ref)
-	if event.Type() != m.schema.Ref {
-		log.Debugf("ignoring event from uninteresting type")
-		return nil
-	}
-	var op operation
-	if err := json.Unmarshal(event.Body(), &op); err != nil {
-		return err
-	}
-
-	key := ds.NewKey(event.EntityID().String())
-	switch op.Type {
-	case upsert:
-		value, err := m.datastore.Get(key)
-		if errors.Is(err, ds.ErrNotFound) {
-			if err = m.datastore.Put(key, op.JSONPatch); err != nil {
-				return err
-			}
-			log.Debug("\tinsert operation applied")
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		patchedValue, err := jsonpatch.MergePatch(value, op.JSONPatch)
-		if err != nil {
-			return fmt.Errorf("error when patching value: %v", err)
-		}
-		if err = m.datastore.Put(key, patchedValue); err != nil {
-			return err
-		}
-		log.Debug("\tupdate operation applied")
-	case delete:
-		if err := m.datastore.Delete(key); err != nil {
-			return err
-		}
-		log.Debug("\tdelete operation applied")
-	default:
-		return fmt.Errorf("unknown operation %s", op.Type)
-	}
-
-	return nil
-}
-
 type Txn struct {
 	model     *Model
 	discarded bool
 	commited  bool
 	readonly  bool
-	ops       map[ds.Key]operation
+
+	actions []es.Action
 }
 
-type operation struct {
-	Type      operationType
-	EntityID  eventstore.EntityID
-	JSONPatch []byte
-}
-
-func (t *Txn) Discard() {
-	t.discarded = true
-}
-
-func (t *Txn) Commit() error {
-	if t.discarded || t.commited {
-		return fmt.Errorf("can't commit discarded/commited txn")
-	}
-	log.Debugf("commiting txn with %d operations", len(t.ops))
-	now := time.Now()
-	//  ToDo/Important: As first approximation, each key change is a separate event
-	for _, op := range t.ops {
-		opBytes, err := json.Marshal(op)
-		if err != nil {
-			return err
-		}
-		event := eventstore.NewJsonPatchEvent(now, op.EntityID, t.model.schema.Ref, opBytes)
-		log.Debugf("\tdispatching event for key %s", op.EntityID)
-		if err := t.model.dispatcher.Dispatch(event); err != nil {
-			return err // Ugh! partial failure, think about what this means for application state
-		}
-	}
-	return nil
+type SaveOp struct {
+	Before interface{}
+	After  interface{}
 }
 
 func (t *Txn) Create(new interface{}) error {
@@ -182,7 +130,7 @@ func (t *Txn) Create(new interface{}) error {
 		return ErrReadonlyTx
 	}
 	id := getEntityID(new)
-	if id == eventstore.EmptyEntityID {
+	if id == es.EmptyEntityID {
 		id = setNewEntityID(new)
 	}
 	key := ds.NewKey(id.String())
@@ -191,13 +139,18 @@ func (t *Txn) Create(new interface{}) error {
 		return err
 	}
 	if exists {
-		return fmt.Errorf("can't add already existing instance id:%s", id)
+		return errCantCreateExistingInstance
 	}
-	newBytes, err := json.Marshal(new)
-	if err != nil {
-		return err
+
+	a := es.Action{
+		Type:       es.Create,
+		EntityID:   id,
+		EntityType: t.model.schema.Ref,
+		Previous:   nil,
+		Current:    new,
 	}
-	t.ops[key] = operation{Type: upsert, EntityID: id, JSONPatch: newBytes}
+	t.actions = append(t.actions, a)
+
 	return nil
 }
 
@@ -208,26 +161,32 @@ func (t *Txn) Save(updated interface{}) error {
 
 	id := getEntityID(updated)
 	key := ds.NewKey(id.String())
-	actual, err := t.model.datastore.Get(key)
+	beforeBytes, err := t.model.datastore.Get(key)
 	if err == ds.ErrNotFound {
-		return fmt.Errorf("can't save unkown instance id:%s", id)
+		return errCantSaveNonExistentInstance
 	}
 	if err != nil {
 		return err
 	}
-	newBytes, err := json.Marshal(updated)
+
+	before := reflect.New(t.model.valueType.Elem()).Interface()
+	err = json.Unmarshal(beforeBytes, before)
 	if err != nil {
 		return err
 	}
-	jsonPatch, err := jsonpatch.CreateMergePatch(actual, newBytes)
-	if err != nil {
-		return err
+	a := es.Action{
+		Type:       es.Save,
+		EntityID:   id,
+		EntityType: t.model.schema.Ref,
+		Previous:   before,
+		Current:    updated,
 	}
-	t.ops[key] = operation{Type: upsert, EntityID: id, JSONPatch: jsonPatch}
+	t.actions = append(t.actions, a)
+
 	return nil
 }
 
-func (t *Txn) Delete(id eventstore.EntityID) error {
+func (t *Txn) Delete(id es.EntityID) error {
 	if t.readonly {
 		return ErrReadonlyTx
 	}
@@ -239,11 +198,18 @@ func (t *Txn) Delete(id eventstore.EntityID) error {
 	if !exists {
 		return ErrNotFound
 	}
-	t.ops[key] = operation{Type: delete, EntityID: id}
+	a := es.Action{
+		Type:       es.Delete,
+		EntityID:   id,
+		EntityType: t.model.schema.Ref,
+		Previous:   nil,
+		Current:    nil,
+	}
+	t.actions = append(t.actions, a)
 	return nil
 }
 
-func (t *Txn) Has(id eventstore.EntityID) (bool, error) {
+func (t *Txn) Has(id es.EntityID) (bool, error) {
 	key := ds.NewKey(id.String())
 	exists, err := t.model.datastore.Has(key)
 	if err != nil {
@@ -252,7 +218,7 @@ func (t *Txn) Has(id eventstore.EntityID) (bool, error) {
 	return exists, nil
 }
 
-func (t *Txn) FindByID(id eventstore.EntityID, v interface{}) error {
+func (t *Txn) FindByID(id es.EntityID, v interface{}) error {
 	key := ds.NewKey(id.String())
 	bytes, err := t.model.datastore.Get(key)
 	if errors.Is(err, ds.ErrNotFound) {
@@ -264,24 +230,55 @@ func (t *Txn) FindByID(id eventstore.EntityID, v interface{}) error {
 	return json.Unmarshal(bytes, v)
 }
 
-func getEntityID(t interface{}) eventstore.EntityID {
+func (t *Txn) Commit() error {
+	if t.discarded || t.commited {
+		return errAlreadyDiscardedCommitedTxn
+	}
+
+	events, err := t.model.eventcreator.Create(t.actions)
+	if err != nil {
+		return err
+	}
+
+	for _, e := range events {
+		if err := t.model.dispatcher.Dispatch(e); err != nil {
+			return err // Note: Important to document the implications of a partial dispatch
+		}
+	}
+	return nil
+}
+
+func (m *Model) Reduce(event es.Event) error {
+	log.Debugf("reducer %s start", m.schema.Ref)
+	if event.Type() != m.schema.Ref {
+		log.Debugf("ignoring event from uninteresting type")
+		return nil
+	}
+	return m.eventcreator.Reduce(event, m.datastore)
+}
+
+func (t *Txn) Discard() {
+	t.discarded = true
+}
+
+func getEntityID(t interface{}) es.EntityID {
 	v := reflect.ValueOf(t)
 	if v.Type().Kind() != reflect.Ptr {
 		v = reflect.New(reflect.TypeOf(v))
 	}
 	v = v.Elem().FieldByName(idFieldName)
-	if !v.IsValid() || v.Type() != reflect.TypeOf(entityID) {
+	if !v.IsValid() || v.Type() != reflect.TypeOf(es.EntityID("")) {
 		panic("invalid instance: doesn't have EntityID attribute")
 	}
-	return eventstore.EntityID(v.String())
+	return es.EntityID(v.String())
 }
 
-func setNewEntityID(t interface{}) eventstore.EntityID {
+func setNewEntityID(t interface{}) es.EntityID {
 	v := reflect.ValueOf(t)
 	if v.Type().Kind() != reflect.Ptr {
 		v = reflect.New(reflect.TypeOf(v))
 	}
-	newID := eventstore.NewEntityID()
+	newID := es.NewEntityID()
 	v.Elem().FieldByName(idFieldName).Set(reflect.ValueOf(newID))
 	return newID
 }

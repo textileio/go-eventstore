@@ -57,39 +57,3 @@ func (n *nullEvent) Type() string {
 
 // Sanity check
 var _ Event = (*nullEvent)(nil)
-
-type jsonPatchEvent struct {
-	Timestamp time.Time
-	entityID  EntityID
-	TypeName  string
-	Patch     []byte
-}
-
-func NewJsonPatchEvent(t time.Time, id EntityID, typeName string, patch []byte) Event {
-	return jsonPatchEvent{
-		Timestamp: t,
-		entityID:  id,
-		TypeName:  typeName,
-		Patch:     patch,
-	}
-}
-
-func (je jsonPatchEvent) Body() []byte {
-	return je.Patch
-}
-
-func (je jsonPatchEvent) Time() []byte {
-	t := je.Timestamp.UnixNano()
-	buf := new(bytes.Buffer)
-	// Use big endian to preserve lexicographic sorting
-	binary.Write(buf, binary.BigEndian, t)
-	return buf.Bytes()
-}
-
-func (je jsonPatchEvent) EntityID() EntityID {
-	return je.entityID
-}
-
-func (je jsonPatchEvent) Type() string {
-	return je.TypeName
-}
