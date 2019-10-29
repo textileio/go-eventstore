@@ -13,6 +13,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type Reducer interface {
+	Reduce(event Event) error
+}
+
 // @todo: Should we also support a `Transformer` to actually fetch raw event data as part of a pipeline?
 
 // Token is a simple unique ID used to reference a registered callback.
@@ -73,7 +77,7 @@ func (d *Dispatcher) Dispatch(event Event) error {
 	defer d.lock.Unlock()
 	// Key format: <timestamp>/<entity-id>/<type>
 	// @todo: This is up for debate, its a 'fake' Event struct right now anyway
-	key := datastore.NewKey(string(event.Time())).ChildString(event.EntityID()).ChildString(event.Type())
+	key := datastore.NewKey(string(event.Time())).ChildString(event.EntityID().String()).ChildString(event.Type())
 	// Encode and add an Event to event store
 	b := bytes.Buffer{}
 	e := gob.NewEncoder(&b)

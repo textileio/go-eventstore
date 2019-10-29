@@ -4,14 +4,30 @@ import (
 	"bytes"
 	"encoding/binary"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+const (
+	EmptyEntityID = EntityID("")
+)
+
+type EntityID string
+
+func NewEntityID() EntityID {
+	return EntityID(uuid.New().String())
+}
+
+func (e EntityID) String() string {
+	return string(e)
+}
 
 // Event is a generic structure for adding events to the Event Store
 //@todo: Decide on what this should actually look like!
 type Event interface {
 	Body() []byte
 	Time() []byte
-	EntityID() string
+	EntityID() EntityID
 	Type() string
 }
 
@@ -31,7 +47,7 @@ func (n *nullEvent) Time() []byte {
 	return buf.Bytes()
 }
 
-func (n *nullEvent) EntityID() string {
+func (n *nullEvent) EntityID() EntityID {
 	return "null"
 }
 
