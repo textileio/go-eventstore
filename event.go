@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	ds "github.com/ipfs/go-datastore"
 )
 
 const (
@@ -57,3 +58,32 @@ func (n *nullEvent) Type() string {
 
 // Sanity check
 var _ Event = (*nullEvent)(nil)
+
+type ActionType int
+
+const (
+	Create ActionType = iota
+	Save
+	Delete
+)
+
+// Action is a operation done in the model
+type Action struct {
+	// Type of the action
+	Type ActionType
+	// EntityID of the instance in action
+	EntityID EntityID
+	// EntityType of the instance in action
+	EntityType string
+	// Previous is the instance before the action
+	Previous interface{}
+	// Current is the instance after the action was done
+	Current interface{}
+}
+
+type EventCodec interface {
+	// Reduce applies generated events into state
+	Reduce(e Event, datastore ds.Datastore, baseKey ds.Key) error
+	// Create corresponding events to be dispatched
+	Create(ops []Action) ([]Event, error)
+}

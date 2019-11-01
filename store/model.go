@@ -27,12 +27,12 @@ type Model struct {
 	schema       *jsonschema.Schema
 	valueType    reflect.Type
 	datastore    ds.Datastore
-	eventcreator es.EventCreator
+	eventcreator es.EventCodec
 	dispatcher   *es.Dispatcher
 	dsKey        ds.Key
 }
 
-func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCreator) *Model {
+func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCodec) *Model {
 	m := &Model{
 		schema:       jsonschema.Reflect(defaultInstance),
 		datastore:    datastore,
@@ -233,14 +233,13 @@ func (t *Txn) Commit() error {
 
 	for _, e := range events {
 		if err := t.model.dispatcher.Dispatch(e); err != nil {
-			return err // ToDo/Note: Important to document the implications of a partial dispatch
+			return err
 		}
 	}
 	return nil
 }
 
 func (m *Model) Reduce(event es.Event) error {
-	// ToDo: distinguish local and remote events for proper locking
 	log.Debugf("reducer %s start", m.schema.Ref)
 	if event.Type() != m.schema.Ref {
 		log.Debugf("ignoring event from uninteresting type")

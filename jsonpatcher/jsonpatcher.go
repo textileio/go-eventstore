@@ -38,9 +38,9 @@ type operation struct {
 type patcher struct {
 }
 
-var _ es.EventCreator = (*patcher)(nil)
+var _ es.EventCodec = (*patcher)(nil)
 
-func New() es.EventCreator {
+func New() es.EventCodec {
 	return &patcher{}
 }
 

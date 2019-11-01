@@ -47,12 +47,7 @@ func (s *Store) RegisterJSONPatcher(name string, defaultInstance interface{}) (*
 	eventcreator := jsonpatcher.New()
 	m := NewModel(name, defaultInstance, s.datastore, s.dispatcher, eventcreator)
 	s.models[m.valueType] = m
-	s.dispatcher.Register(m) // ToDo: find good place for reg token, with proper unregistering
-
-	// Debug
-	// dbgJSON, _ := json.MarshalIndent(m.schema, "", "  ")
-	// log.Debugf("registered model %q: %s", name, string(dbgJSON))
-
+	s.dispatcher.Register(m)
 	return m, nil
 }
 
