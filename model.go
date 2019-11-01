@@ -1,4 +1,4 @@
-package store
+package eventstore
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/alecthomas/jsonschema"
 	ds "github.com/ipfs/go-datastore"
-	es "github.com/textileio/go-eventstore"
+	"github.com/textileio/go-eventstore/core"
 )
 
 var (
@@ -25,13 +25,13 @@ type Model struct {
 	schema     *jsonschema.Schema
 	valueType  reflect.Type
 	datastore  ds.Datastore
-	eventcodec es.EventCodec
-	dispatcher *es.Dispatcher
+	eventcodec core.EventCodec
+	dispatcher *Dispatcher
 	dsKey      ds.Key
 	store      *Store
 }
 
-func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCodec, s *Store) *Model {
+func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *Dispatcher, eventcreator core.EventCodec, s *Store) *Model {
 	m := &Model{
 		schema:     jsonschema.Reflect(defaultInstance),
 		datastore:  datastore,
@@ -53,7 +53,7 @@ func (m *Model) WriteTxn(f func(txn *Txn) error) error {
 	return m.store.writeTxn(m, f)
 }
 
-func (m *Model) FindByID(id es.EntityID, v interface{}) error {
+func (m *Model) FindByID(id core.EntityID, v interface{}) error {
 	return m.ReadTxn(func(txn *Txn) error {
 		return txn.FindByID(id, v)
 	})
@@ -65,7 +65,7 @@ func (m *Model) Create(vs ...interface{}) error {
 	})
 }
 
-func (m *Model) Delete(ids ...es.EntityID) error {
+func (m *Model) Delete(ids ...core.EntityID) error {
 	return m.WriteTxn(func(txn *Txn) error {
 		return txn.Delete(ids...)
 	})
@@ -77,7 +77,7 @@ func (m *Model) Save(vs ...interface{}) error {
 	})
 }
 
-func (m *Model) Has(ids ...es.EntityID) (exists bool, err error) {
+func (m *Model) Has(ids ...core.EntityID) (exists bool, err error) {
 	m.ReadTxn(func(txn *Txn) error {
 		exists, err = txn.Has(ids...)
 		return err
@@ -97,7 +97,7 @@ type Txn struct {
 	commited  bool
 	readonly  bool
 
-	actions []es.Action
+	actions []core.Action
 }
 
 func (t *Txn) Create(new ...interface{}) error {
@@ -106,7 +106,7 @@ func (t *Txn) Create(new ...interface{}) error {
 			return ErrReadonlyTx
 		}
 		id := getEntityID(new[i])
-		if id == es.EmptyEntityID {
+		if id == core.EmptyEntityID {
 			id = setNewEntityID(new[i])
 		}
 		key := t.model.dsKey.ChildString(id.String())
@@ -118,8 +118,8 @@ func (t *Txn) Create(new ...interface{}) error {
 			return errCantCreateExistingInstance
 		}
 
-		a := es.Action{
-			Type:       es.Create,
+		a := core.Action{
+			Type:       core.Create,
 			EntityID:   id,
 			EntityType: t.model.schema.Ref,
 			Previous:   nil,
@@ -151,8 +151,8 @@ func (t *Txn) Save(updated ...interface{}) error {
 		if err != nil {
 			return err
 		}
-		a := es.Action{
-			Type:       es.Save,
+		a := core.Action{
+			Type:       core.Save,
 			EntityID:   id,
 			EntityType: t.model.schema.Ref,
 			Previous:   before,
@@ -163,7 +163,7 @@ func (t *Txn) Save(updated ...interface{}) error {
 	return nil
 }
 
-func (t *Txn) Delete(ids ...es.EntityID) error {
+func (t *Txn) Delete(ids ...core.EntityID) error {
 	for i := range ids {
 		if t.readonly {
 			return ErrReadonlyTx
@@ -176,8 +176,8 @@ func (t *Txn) Delete(ids ...es.EntityID) error {
 		if !exists {
 			return ErrNotFound
 		}
-		a := es.Action{
-			Type:       es.Delete,
+		a := core.Action{
+			Type:       core.Delete,
 			EntityID:   ids[i],
 			EntityType: t.model.schema.Ref,
 			Previous:   nil,
@@ -188,7 +188,7 @@ func (t *Txn) Delete(ids ...es.EntityID) error {
 	return nil
 }
 
-func (t *Txn) Has(ids ...es.EntityID) (bool, error) {
+func (t *Txn) Has(ids ...core.EntityID) (bool, error) {
 	for i := range ids {
 		key := t.model.dsKey.ChildString(ids[i].String())
 		exists, err := t.model.datastore.Has(key)
@@ -202,7 +202,7 @@ func (t *Txn) Has(ids ...es.EntityID) (bool, error) {
 	return true, nil
 }
 
-func (t *Txn) FindByID(id es.EntityID, v interface{}) error {
+func (t *Txn) FindByID(id core.EntityID, v interface{}) error {
 	key := t.model.dsKey.ChildString(id.String())
 	bytes, err := t.model.datastore.Get(key)
 	if errors.Is(err, ds.ErrNotFound) {
@@ -232,7 +232,7 @@ func (t *Txn) Commit() error {
 	return nil
 }
 
-func (m *Model) Reduce(event es.Event) error {
+func (m *Model) Reduce(event core.Event) error {
 	log.Debugf("reducer %s start", m.schema.Ref)
 	if event.Type() != m.schema.Ref {
 		log.Debugf("ignoring event from uninteresting type")
@@ -246,24 +246,24 @@ func (t *Txn) Discard() {
 	t.discarded = true
 }
 
-func getEntityID(t interface{}) es.EntityID {
+func getEntityID(t interface{}) core.EntityID {
 	v := reflect.ValueOf(t)
 	if v.Type().Kind() != reflect.Ptr {
 		v = reflect.New(reflect.TypeOf(v))
 	}
 	v = v.Elem().FieldByName(idFieldName)
-	if !v.IsValid() || v.Type() != reflect.TypeOf(es.EntityID("")) {
+	if !v.IsValid() || v.Type() != reflect.TypeOf(core.EmptyEntityID) {
 		panic("invalid instance: doesn't have EntityID attribute")
 	}
-	return es.EntityID(v.String())
+	return core.EntityID(v.String())
 }
 
-func setNewEntityID(t interface{}) es.EntityID {
+func setNewEntityID(t interface{}) core.EntityID {
 	v := reflect.ValueOf(t)
 	if v.Type().Kind() != reflect.Ptr {
 		v = reflect.New(reflect.TypeOf(v))
 	}
-	newID := es.NewEntityID()
+	newID := core.NewEntityID()
 	v.Elem().FieldByName(idFieldName).Set(reflect.ValueOf(newID))
 	return newID
 }

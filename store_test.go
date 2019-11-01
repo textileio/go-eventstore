@@ -1,4 +1,4 @@
-package store
+package eventstore
 
 import (
 	"os"
@@ -7,7 +7,8 @@ import (
 
 	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log"
-	es "github.com/textileio/go-eventstore"
+	"github.com/textileio/go-eventstore/core"
+	"github.com/textileio/go-eventstore/jsonpatcher"
 )
 
 const (
@@ -15,13 +16,13 @@ const (
 )
 
 type Person struct {
-	ID   es.EntityID
+	ID   core.EntityID
 	Name string
 	Age  int
 }
 
 type Dog struct {
-	ID       es.EntityID
+	ID       core.EntityID
 	Name     string
 	Comments []Comment
 }
@@ -39,15 +40,15 @@ func TestSchemaRegistration(t *testing.T) {
 	t.Run("Single", func(t *testing.T) {
 		t.Parallel()
 		store := createTestStore()
-		_, err := store.RegisterJSONPatcher("Dog", &Dog{})
+		_, err := store.Register("Dog", &Dog{})
 		checkErr(t, err)
 	})
 	t.Run("Multiple", func(t *testing.T) {
 		t.Parallel()
 		store := createTestStore()
-		_, err := store.RegisterJSONPatcher("Dog", &Dog{})
+		_, err := store.Register("Dog", &Dog{})
 		checkErr(t, err)
-		_, err = store.RegisterJSONPatcher("Person", &Person{})
+		_, err = store.Register("Person", &Person{})
 		checkErr(t, err)
 	})
 	t.Run("Fail/WithoutEntityID", func(t *testing.T) {
@@ -56,7 +57,7 @@ func TestSchemaRegistration(t *testing.T) {
 			IDontHaveAnIDField int
 		}
 		store := createTestStore()
-		if _, err := store.RegisterJSONPatcher("FailingModel", &FailingModel{}); err != ErrInvalidModel {
+		if _, err := store.Register("FailingModel", &FailingModel{}); err != ErrInvalidModel {
 			t.Fatal("the model should be invalid")
 		}
 	})
@@ -67,7 +68,7 @@ func TestCreateInstance(t *testing.T) {
 	t.Run("Single", func(t *testing.T) {
 		t.Parallel()
 		store := createTestStore()
-		model, err := store.RegisterJSONPatcher("Person", &Person{})
+		model, err := store.Register("Person", &Person{})
 		checkErr(t, err)
 
 		t.Run("WithImplicitTx", func(t *testing.T) {
@@ -88,7 +89,7 @@ func TestCreateInstance(t *testing.T) {
 	t.Run("Multiple", func(t *testing.T) {
 		t.Parallel()
 		store := createTestStore()
-		model, err := store.RegisterJSONPatcher("Person", &Person{})
+		model, err := store.Register("Person", &Person{})
 		checkErr(t, err)
 
 		newPerson1 := &Person{Name: "Foo1", Age: 42}
@@ -113,7 +114,7 @@ func TestGetInstance(t *testing.T) {
 	t.Parallel()
 
 	store := createTestStore()
-	model, err := store.RegisterJSONPatcher("Person", &Person{})
+	model, err := store.Register("Person", &Person{})
 	checkErr(t, err)
 
 	newPerson := &Person{Name: "Foo", Age: 42}
@@ -158,7 +159,7 @@ func TestUpdateInstance(t *testing.T) {
 	t.Parallel()
 
 	store := createTestStore()
-	model, err := store.RegisterJSONPatcher("Person", &Person{})
+	model, err := store.Register("Person", &Person{})
 	checkErr(t, err)
 
 	newPerson := &Person{Name: "Alice", Age: 42}
@@ -194,7 +195,7 @@ func TestDeleteInstance(t *testing.T) {
 	t.Parallel()
 
 	store := createTestStore()
-	model, err := store.RegisterJSONPatcher("Person", &Person{})
+	model, err := store.Register("Person", &Person{})
 	checkErr(t, err)
 
 	newPerson := &Person{Name: "Alice", Age: 42}
@@ -248,6 +249,7 @@ func assertPersonInModel(t *testing.T, model *Model, person *Person) {
 
 func createTestStore() *Store {
 	datastore := ds.NewMapDatastore()
-	dispatcher := es.NewDispatcher(es.NewTxMapDatastore())
-	return NewStore(datastore, dispatcher)
+	dispatcher := NewDispatcher(NewTxMapDatastore())
+	eventcodec := jsonpatcher.New()
+	return NewStore(datastore, dispatcher, eventcodec)
 }

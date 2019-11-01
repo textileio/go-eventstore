@@ -3,11 +3,12 @@ package main
 import (
 	ds "github.com/ipfs/go-datastore"
 	es "github.com/textileio/go-eventstore"
-	"github.com/textileio/go-eventstore/store"
+	"github.com/textileio/go-eventstore/core"
+	"github.com/textileio/go-eventstore/jsonpatcher"
 )
 
 type Book struct {
-	ID     es.EntityID
+	ID     core.EntityID
 	Title  string
 	Author string
 	Meta   BookStats
@@ -21,7 +22,7 @@ type BookStats struct {
 func main() {
 	s := createMemStore()
 
-	model, err := s.RegisterJSONPatcher("Book", &Book{})
+	model, err := s.Register("Book", &Book{})
 	checkErr(err)
 
 	// Bootstrap the model with some books: two from Author1 and one from Author2
@@ -51,7 +52,7 @@ func main() {
 	// Query all the books
 	{
 		var books []*Book
-		err := model.Find(&books, &store.Query{})
+		err := model.Find(&books, &es.Query{})
 		checkErr(err)
 		if len(books) != 3 {
 			panic("there should be three books")
@@ -61,7 +62,7 @@ func main() {
 	// Query the books from Author2
 	{
 		var books []*Book
-		err := model.Find(&books, store.Where("Author").Eq("Author1"))
+		err := model.Find(&books, es.Where("Author").Eq("Author1"))
 		checkErr(err)
 		if len(books) != 2 {
 			panic("Author1 should have two books")
@@ -71,7 +72,7 @@ func main() {
 	// Query with nested condition
 	{
 		var books []*Book
-		err := model.Find(&books, store.Where("Meta.TotalReads").Eq(100))
+		err := model.Find(&books, es.Where("Meta.TotalReads").Eq(100))
 		checkErr(err)
 		if len(books) != 1 {
 			panic("There should be one book with 100 total reads")
@@ -81,7 +82,7 @@ func main() {
 	// Query book by two conditions
 	{
 		var books []*Book
-		err := model.Find(&books, store.Where("Author").Eq("Author1").And("Title").Eq("Title2"))
+		err := model.Find(&books, es.Where("Author").Eq("Author1").And("Title").Eq("Title2"))
 		checkErr(err)
 		if len(books) != 1 {
 			panic("Author1 should have only one book with Title2")
@@ -91,7 +92,7 @@ func main() {
 	// Query book by OR condition
 	{
 		var books []*Book
-		err := model.Find(&books, store.Where("Author").Eq("Author1").Or(store.Where("Author").Eq("Author2")))
+		err := model.Find(&books, es.Where("Author").Eq("Author1").Or(es.Where("Author").Eq("Author2")))
 		checkErr(err)
 		if len(books) != 3 {
 			panic("Author1 & Author2 have should have 3 books in total")
@@ -102,13 +103,13 @@ func main() {
 	{
 		var books []*Book
 		// Ascending
-		err := model.Find(&books, store.Where("Author").Eq("Author1").OrderBy("Meta.TotalReads"))
+		err := model.Find(&books, es.Where("Author").Eq("Author1").OrderBy("Meta.TotalReads"))
 		checkErr(err)
 		if books[0].Meta.TotalReads != 100 || books[1].Meta.TotalReads != 150 {
 			panic("books aren't ordered asc correctly")
 		}
 		// Descending
-		err = model.Find(&books, store.Where("Author").Eq("Author1").OrderByDesc("Meta.TotalReads"))
+		err = model.Find(&books, es.Where("Author").Eq("Author1").OrderByDesc("Meta.TotalReads"))
 		checkErr(err)
 		if books[0].Meta.TotalReads != 150 || books[1].Meta.TotalReads != 100 {
 			panic("books aren't ordered desc correctly")
@@ -118,27 +119,27 @@ func main() {
 	// Query, Update, and Save
 	{
 		var books []*Book
-		err := model.Find(&books, store.Where("Title").Eq("Title3"))
+		err := model.Find(&books, es.Where("Title").Eq("Title3"))
 		checkErr(err)
 
 		// Modify title
 		book := books[0]
 		book.Title = "ModifiedTitle"
 		model.Save(book)
-		err = model.Find(&books, store.Where("Title").Eq("Title3"))
+		err = model.Find(&books, es.Where("Title").Eq("Title3"))
 		checkErr(err)
 		if len(books) != 0 {
 			panic("Book with Title3 shouldn't exist")
 		}
 
 		// Delete it
-		err = model.Find(&books, store.Where("Title").Eq("ModifiedTitle"))
+		err = model.Find(&books, es.Where("Title").Eq("ModifiedTitle"))
 		checkErr(err)
 		if len(books) != 1 {
 			panic("Book with ModifiedTitle should exist")
 		}
 		model.Delete(books[0].ID)
-		err = model.Find(&books, store.Where("Title").Eq("ModifiedTitle"))
+		err = model.Find(&books, es.Where("Title").Eq("ModifiedTitle"))
 		checkErr(err)
 		if len(books) != 0 {
 			panic("Book with ModifiedTitle shouldn't exist")
@@ -150,10 +151,10 @@ func main() {
 	// ToDo: Multi-sort criteria?
 }
 
-func createMemStore() *store.Store {
+func createMemStore() *es.Store {
 	datastore := ds.NewMapDatastore()
 	dispatcher := es.NewDispatcher(es.NewTxMapDatastore())
-	return store.NewStore(datastore, dispatcher)
+	return es.NewStore(datastore, dispatcher, jsonpatcher.New())
 }
 
 func checkErr(err error) {

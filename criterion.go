@@ -21,7 +21,7 @@
 	SOFTWARE.
 */
 // Code has multiple changes compared to original, but corresponds proper mentioning.
-package store
+package eventstore
 
 import (
 	"fmt"

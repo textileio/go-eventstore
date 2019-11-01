@@ -7,6 +7,7 @@ import (
 
 	datastore "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
+	"github.com/textileio/go-eventstore/core"
 )
 
 // TxMapDatastore does stuff...
@@ -111,19 +112,19 @@ func (bt *SimpleTx) Commit() error {
 
 type nullReducer struct{}
 
-func (n *nullReducer) Reduce(event Event) error {
+func (n *nullReducer) Reduce(event core.Event) error {
 	return nil
 }
 
 type errorReducer struct{}
 
-func (n *errorReducer) Reduce(event Event) error {
+func (n *errorReducer) Reduce(event core.Event) error {
 	return errors.New("error")
 }
 
 type slowReducer struct{}
 
-func (n *slowReducer) Reduce(event Event) error {
+func (n *slowReducer) Reduce(event core.Event) error {
 	time.Sleep(2 * time.Second)
 	return nil
 }

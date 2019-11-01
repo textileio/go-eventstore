@@ -1,4 +1,4 @@
-package eventstore
+package core
 
 import (
 	"bytes"
@@ -30,6 +30,10 @@ type Event interface {
 	Time() []byte
 	EntityID() EntityID
 	Type() string
+}
+
+func NewNullEvent(t time.Time) Event {
+	return &nullEvent{Timestamp: t}
 }
 
 type nullEvent struct {

@@ -7,12 +7,13 @@ import (
 
 	datastore "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
+	"github.com/textileio/go-eventstore/core"
 )
 
 func TestNewEventDispatcher(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
-	event := &nullEvent{Timestamp: time.Now()}
+	event := core.NewNullEvent(time.Now())
 	dispatcher.Dispatch(event)
 }
 
@@ -29,7 +30,7 @@ func TestDispatchLock(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
 	dispatcher.Register(&slowReducer{})
-	event := &nullEvent{Timestamp: time.Now()}
+	event := core.NewNullEvent(time.Now())
 	t1 := time.Now()
 	wg := &sync.WaitGroup{}
 	go func() {
@@ -52,7 +53,7 @@ func TestDispatchLock(t *testing.T) {
 func TestDispatch(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
-	event := &nullEvent{Timestamp: time.Now()}
+	event := core.NewNullEvent(time.Now())
 	if err := dispatcher.Dispatch(event); err != nil {
 		t.Error("unexpected error in dispatch call")
 	}
@@ -95,10 +96,10 @@ func TestValidStore(t *testing.T) {
 func TestQuery(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
-	var events []Event
+	var events []core.Event
 	n := 100
 	for i := 1; i <= n; i++ {
-		events = append(events, &nullEvent{Timestamp: time.Now()})
+		events = append(events, core.NewNullEvent(time.Now()))
 		time.Sleep(time.Millisecond)
 	}
 	for _, event := range events {

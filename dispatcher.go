@@ -9,11 +9,12 @@ import (
 
 	datastore "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
+	"github.com/textileio/go-eventstore/core"
 	"golang.org/x/sync/errgroup"
 )
 
 type Reducer interface {
-	Reduce(event Event) error
+	Reduce(event core.Event) error
 }
 
 // Dispatcher is used to dispatch events to registered reducers.
@@ -49,7 +50,7 @@ func (d *Dispatcher) Register(reducer Reducer) {
 }
 
 // Dispatch dispatches a payload to all registered reducers.
-func (d *Dispatcher) Dispatch(event Event) error {
+func (d *Dispatcher) Dispatch(event core.Event) error {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	// Key format: <timestamp>/<entity-id>/<type>

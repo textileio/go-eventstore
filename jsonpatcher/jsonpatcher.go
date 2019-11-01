@@ -11,7 +11,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log"
-	es "github.com/textileio/go-eventstore"
+	"github.com/textileio/go-eventstore/core"
 )
 
 type operationType int
@@ -31,30 +31,30 @@ var (
 
 type operation struct {
 	Type      operationType
-	EntityID  es.EntityID
+	EntityID  core.EntityID
 	JSONPatch []byte
 }
 
 type patcher struct {
 }
 
-var _ es.EventCodec = (*patcher)(nil)
+var _ core.EventCodec = (*patcher)(nil)
 
-func New() es.EventCodec {
+func New() core.EventCodec {
 	return &patcher{}
 }
 
-func (m *patcher) Create(actions []es.Action) ([]es.Event, error) {
-	events := make([]es.Event, len(actions))
+func (m *patcher) Create(actions []core.Action) ([]core.Event, error) {
+	events := make([]core.Event, len(actions))
 	for i := range actions {
 		var eventPayload []byte
 		var err error
 		switch actions[i].Type {
-		case es.Create:
+		case core.Create:
 			eventPayload, err = createEvent(actions[i].EntityID, actions[i].Current)
-		case es.Save:
+		case core.Save:
 			eventPayload, err = saveEvent(actions[i].EntityID, actions[i].Previous, actions[i].Current)
-		case es.Delete:
+		case core.Delete:
 			eventPayload, err = deleteEvent(actions[i].EntityID)
 		default:
 			panic("unkown action type")
@@ -72,7 +72,7 @@ func (m *patcher) Create(actions []es.Action) ([]es.Event, error) {
 	return events, nil
 }
 
-func (p *patcher) Reduce(e es.Event, datastore ds.Datastore, baseKey ds.Key) error {
+func (p *patcher) Reduce(e core.Event, datastore ds.Datastore, baseKey ds.Key) error {
 	var op operation
 	if err := json.Unmarshal(e.Body(), &op); err != nil {
 		return err
@@ -120,7 +120,7 @@ func (p *patcher) Reduce(e es.Event, datastore ds.Datastore, baseKey ds.Key) err
 	return nil
 }
 
-func createEvent(id es.EntityID, v interface{}) ([]byte, error) {
+func createEvent(id core.EntityID, v interface{}) ([]byte, error) {
 	opBytes, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func createEvent(id es.EntityID, v interface{}) ([]byte, error) {
 	return eventPayload, nil
 }
 
-func saveEvent(id es.EntityID, prev interface{}, curr interface{}) ([]byte, error) {
+func saveEvent(id core.EntityID, prev interface{}, curr interface{}) ([]byte, error) {
 	prevBytes, err := json.Marshal(prev)
 	if err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func saveEvent(id es.EntityID, prev interface{}, curr interface{}) ([]byte, erro
 	return eventPayload, nil
 }
 
-func deleteEvent(id es.EntityID) ([]byte, error) {
+func deleteEvent(id core.EntityID) ([]byte, error) {
 	op := operation{
 		Type:      delete,
 		EntityID:  id,
@@ -177,7 +177,7 @@ func deleteEvent(id es.EntityID) ([]byte, error) {
 
 type patchEvent struct {
 	Timestamp time.Time
-	ID        es.EntityID
+	ID        core.EntityID
 	TypeName  string
 	Patch     []byte
 }
@@ -194,7 +194,7 @@ func (je patchEvent) Time() []byte {
 	return buf.Bytes()
 }
 
-func (je patchEvent) EntityID() es.EntityID {
+func (je patchEvent) EntityID() core.EntityID {
 	return je.ID
 }
 
@@ -202,4 +202,4 @@ func (je patchEvent) Type() string {
 	return je.TypeName
 }
 
-var _ es.Event = (*patchEvent)(nil)
+var _ core.Event = (*patchEvent)(nil)
