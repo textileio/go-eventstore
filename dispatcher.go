@@ -16,10 +16,6 @@ type Reducer interface {
 	Reduce(event Event) error
 }
 
-const prefix = "ID"
-
-var lastID = 0
-
 // Dispatcher is used to dispatch events to registered reducers.
 //
 // This is different from generic pub-sub systems because reducers are not subscribed to particular events.
@@ -28,7 +24,8 @@ var lastID = 0
 type Dispatcher struct {
 	store    datastore.TxnDatastore
 	reducers []Reducer
-	lock     sync.Mutex
+	lock     sync.RWMutex
+	lastID   int
 }
 
 // NewDispatcher creates a new EventDispatcher
@@ -47,7 +44,7 @@ func (d *Dispatcher) Store() datastore.TxnDatastore {
 func (d *Dispatcher) Register(reducer Reducer) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	lastID++
+	d.lastID++
 	d.reducers = append(d.reducers, reducer)
 }
 

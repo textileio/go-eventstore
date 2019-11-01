@@ -23,23 +23,23 @@ var (
 )
 
 type Model struct {
-	lock         sync.RWMutex
-	schema       *jsonschema.Schema
-	valueType    reflect.Type
-	datastore    ds.Datastore
-	eventcreator es.EventCodec
-	dispatcher   *es.Dispatcher
-	dsKey        ds.Key
+	lock       sync.RWMutex
+	schema     *jsonschema.Schema
+	valueType  reflect.Type
+	datastore  ds.Datastore
+	eventcodec es.EventCodec
+	dispatcher *es.Dispatcher
+	dsKey      ds.Key
 }
 
 func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCodec) *Model {
 	m := &Model{
-		schema:       jsonschema.Reflect(defaultInstance),
-		datastore:    datastore,
-		valueType:    reflect.TypeOf(defaultInstance),
-		dispatcher:   dispatcher,
-		eventcreator: eventcreator,
-		dsKey:        baseKey.ChildString(name),
+		schema:     jsonschema.Reflect(defaultInstance),
+		datastore:  datastore,
+		valueType:  reflect.TypeOf(defaultInstance),
+		dispatcher: dispatcher,
+		eventcodec: eventcreator,
+		dsKey:      baseKey.ChildString(name),
 	}
 
 	return m
@@ -226,7 +226,7 @@ func (t *Txn) Commit() error {
 		return errAlreadyDiscardedCommitedTxn
 	}
 
-	events, err := t.model.eventcreator.Create(t.actions)
+	events, err := t.model.eventcodec.Create(t.actions)
 	if err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func (m *Model) Reduce(event es.Event) error {
 		return nil
 	}
 
-	return m.eventcreator.Reduce(event, m.datastore, m.dsKey)
+	return m.eventcodec.Reduce(event, m.datastore, m.dsKey)
 }
 
 func (t *Txn) Discard() {
