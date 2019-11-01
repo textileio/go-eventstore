@@ -76,7 +76,7 @@ func (q *Query) match(v reflect.Value) (bool, error) {
 	return false, nil
 }
 
-func find(txn *Txn, res interface{}, q *Query) error {
+func (t *Txn) Find(res interface{}, q *Query) error {
 	// ToDo: context cancellation? (to call dsr.Close())
 	valRes := reflect.ValueOf(res)
 	if valRes.Kind() != reflect.Ptr || valRes.Elem().Kind() != reflect.Slice {
@@ -92,9 +92,9 @@ func find(txn *Txn, res interface{}, q *Query) error {
 	}
 
 	dsq := dsquery.Query{
-		Prefix: txn.model.dsKey.String(),
+		Prefix: t.model.dsKey.String(),
 	}
-	dsr, err := txn.model.datastore.Query(dsq)
+	dsr, err := t.model.datastore.Query(dsq)
 	if err != nil {
 		return fmt.Errorf("error when internal query: %v", err)
 	}
@@ -104,7 +104,7 @@ func find(txn *Txn, res interface{}, q *Query) error {
 			break
 		}
 
-		instance := reflect.New(txn.model.valueType.Elem())
+		instance := reflect.New(t.model.valueType.Elem())
 		err = json.Unmarshal(res.Value, instance.Interface())
 		if err != nil {
 			return fmt.Errorf("error when unmarhsaling query result: %v", err)

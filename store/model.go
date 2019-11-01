@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
-	"sync"
 
 	"github.com/alecthomas/jsonschema"
 	ds "github.com/ipfs/go-datastore"
@@ -23,16 +22,16 @@ var (
 )
 
 type Model struct {
-	lock       sync.RWMutex
 	schema     *jsonschema.Schema
 	valueType  reflect.Type
 	datastore  ds.Datastore
 	eventcodec es.EventCodec
 	dispatcher *es.Dispatcher
 	dsKey      ds.Key
+	store      *Store
 }
 
-func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCodec) *Model {
+func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *es.Dispatcher, eventcreator es.EventCodec, s *Store) *Model {
 	m := &Model{
 		schema:     jsonschema.Reflect(defaultInstance),
 		datastore:  datastore,
@@ -40,33 +39,18 @@ func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, 
 		dispatcher: dispatcher,
 		eventcodec: eventcreator,
 		dsKey:      baseKey.ChildString(name),
+		store:      s,
 	}
 
 	return m
 }
 
 func (m *Model) ReadTxn(f func(txn *Txn) error) error {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
-
-	txn := &Txn{model: m, readonly: true}
-	defer txn.Discard()
-	if err := f(txn); err != nil {
-		return err
-	}
-	return nil
+	return m.store.readTxn(m, f)
 }
 
 func (m *Model) WriteTxn(f func(txn *Txn) error) error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	txn := &Txn{model: m}
-	defer txn.Discard()
-	if err := f(txn); err != nil {
-		return err
-	}
-	return txn.Commit()
+	return m.store.writeTxn(m, f)
 }
 
 func (m *Model) FindByID(id es.EntityID, v interface{}) error {
@@ -103,7 +87,7 @@ func (m *Model) Has(id es.EntityID) (exists bool, err error) {
 
 func (m *Model) Find(result interface{}, q *Query) error {
 	return m.ReadTxn(func(txn *Txn) error {
-		return find(txn, result, q)
+		return txn.Find(result, q)
 	})
 }
 
