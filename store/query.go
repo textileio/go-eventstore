@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
+	"sort"
 
 	dsquery "github.com/ipfs/go-datastore/query"
 )
@@ -16,9 +16,18 @@ const (
 	// ToDo: Further operations here
 )
 
+var (
+	panicInvalidSortingField = "sorting field doesn't correspond to instance type"
+	panicCantCompareOnSort   = "can't compare while sorting"
+)
+
 type Query struct {
 	ands []*Criterion
 	ors  []*Query
+	sort struct {
+		field string
+		desc  bool
+	}
 }
 
 func Where(field string) *Criterion {
@@ -36,6 +45,18 @@ func (q *Query) And(field string) *Criterion {
 
 func (q *Query) Or(orQuery *Query) *Query {
 	q.ors = append(q.ors, orQuery)
+	return q
+}
+
+func (q *Query) OrderBy(field string) *Query {
+	q.sort.field = field
+	q.sort.desc = false
+	return q
+}
+
+func (q *Query) OrderByDesc(field string) *Query {
+	q.sort.field = field
+	q.sort.desc = true
 	return q
 }
 
@@ -82,15 +103,9 @@ func (t *Txn) Find(res interface{}, q *Query) error {
 	if valRes.Kind() != reflect.Ptr || valRes.Elem().Kind() != reflect.Slice {
 		panic("result should be a slice")
 	}
-	resSlice := valRes.Elem()
-	resSlice.Set(resSlice.Slice(0, 0)) // ToDo: Document that received slice is niled
-
-	// ToDo: also check `result` is slice of *model type*
-
 	if q == nil {
 		q = &Query{}
 	}
-
 	dsq := dsquery.Query{
 		Prefix: t.model.dsKey.String(),
 	}
@@ -98,42 +113,52 @@ func (t *Txn) Find(res interface{}, q *Query) error {
 	if err != nil {
 		return fmt.Errorf("error when internal query: %v", err)
 	}
+
+	resSlice := valRes.Elem()
+	resSlice.Set(resSlice.Slice(0, 0)) // ToDo: Document that received slice is niled
+	// ToDo: also check `res` is slice of *model type*
+	var unsorted []reflect.Value
 	for {
 		res, ok := dsr.NextSync()
 		if !ok {
 			break
 		}
-
 		instance := reflect.New(t.model.valueType.Elem())
-		err = json.Unmarshal(res.Value, instance.Interface())
-		if err != nil {
-			return fmt.Errorf("error when unmarhsaling query result: %v", err)
+		if err = json.Unmarshal(res.Value, instance.Interface()); err != nil {
+			return fmt.Errorf("error when unmarshaling query result: %v", err)
 		}
-		ok, err := q.match(instance)
+		ok, err = q.match(instance)
 		if err != nil {
 			return fmt.Errorf("error when matching entry with query: %v", err)
 		}
 		if ok {
-			resSlice = reflect.Append(resSlice, instance)
+			unsorted = append(unsorted, instance)
 		}
 	}
-	valRes.Elem().Set(resSlice.Slice(0, resSlice.Len()))
+	if q.sort.field != "" {
+		sort.Slice(unsorted, func(i, j int) bool {
+			fieldI, err := traverseFieldPath(unsorted[i], q.sort.field)
+			if err != nil {
+				panic(panicInvalidSortingField)
+			}
+			fieldJ, err := traverseFieldPath(unsorted[j], q.sort.field)
+			if err != nil {
+				panic(panicInvalidSortingField)
+			}
+			res, err := compare(fieldI, fieldJ)
+			if err != nil {
+				panic(panicCantCompareOnSort)
+			}
+			if q.sort.desc {
+				res *= -1
+			}
+			return res < 0
+		})
+	}
+
+	for i := range unsorted {
+		resSlice = reflect.Append(resSlice, unsorted[i])
+	}
+	valRes.Elem().Set(resSlice)
 	return nil
-}
-
-func traverseFieldPath(value reflect.Value, fieldPath string) (reflect.Value, error) {
-	fields := strings.Split(fieldPath, ".")
-
-	current := value // ToDo: Can `current` be deleted?
-	for i := range fields {
-		if current.Kind() == reflect.Ptr {
-			current = current.Elem()
-		}
-		current = current.FieldByName(fields[i])
-
-		if !current.IsValid() {
-			return reflect.Value{}, fmt.Errorf("instance field %s doesn't exist in type %s", fieldPath, value)
-		}
-	}
-	return current, nil
 }

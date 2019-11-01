@@ -36,33 +36,20 @@ func TestBooks(t *testing.T) {
 		checkErr(model.Create(book3))
 	}
 
-	// Query, Update, and Save
+	// Sorted query
 	{
 		var books []*Book
-		err := model.Find(&books, store.Where("Title").Eq("Title3"))
+		// Ascending
+		err := model.Find(&books, store.Where("Author").Eq("Author1").OrderBy("Meta.TotalReads"))
 		checkErr(err)
-
-		// Modify title
-		book := books[0]
-		book.Title = "ModifiedTitle"
-		model.Save(book)
-		err = model.Find(&books, store.Where("Title").Eq("Title3"))
-		checkErr(err)
-		if len(books) != 0 {
-			panic("Book with Title3 shouldn't exist")
+		if books[0].Meta.TotalReads != 100 || books[1].Meta.TotalReads != 150 {
+			panic("books aren't ordered asc correctly")
 		}
-
-		// Delete it
-		err = model.Find(&books, store.Where("Title").Eq("ModifiedTitle"))
+		// Descending
+		err = model.Find(&books, store.Where("Author").Eq("Author1").OrderByDesc("Meta.TotalReads"))
 		checkErr(err)
-		if len(books) != 1 {
-			panic("Book with ModifiedTitle should exist")
-		}
-		model.Delete(books[0].ID)
-		err = model.Find(&books, store.Where("Title").Eq("ModifiedTitle"))
-		checkErr(err)
-		if len(books) != 0 {
-			panic("Book with ModifiedTitle shouldn't exist")
+		if books[0].Meta.TotalReads != 150 || books[1].Meta.TotalReads != 100 {
+			panic("books aren't ordered desc correctly")
 		}
 	}
 }

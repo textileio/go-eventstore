@@ -68,6 +68,16 @@ func main() {
 		}
 	}
 
+	// Query with nested condition
+	{
+		var books []*Book
+		err := model.Find(&books, store.Where("Meta.TotalReads").Eq(100))
+		checkErr(err)
+		if len(books) != 1 {
+			panic("There should be one book with 100 total reads")
+		}
+	}
+
 	// Query book by two conditions
 	{
 		var books []*Book
@@ -88,35 +98,22 @@ func main() {
 		}
 	}
 
-	// // Sorted query
-	// {
-	// 	var books []*Book
-	// 	err := model.Find(&books, store.Where("Title"))
-	// 	checkErr(err)
-
-	// 	// Modify title
-	// 	book := books[0]
-	// 	book.Title = "ModifiedTitle"
-	// 	model.Save(book)
-	// 	err = model.Find(&books, store.Where("Title").Eq("Title3"))
-	// 	checkErr(err)
-	// 	if len(books) != 0 {
-	// 		panic("Book with Title3 shouldn't exist")
-	// 	}
-
-	// 	// Delete it
-	// 	err = model.Find(&books, store.Where("Title").Eq("ModifiedTitle"))
-	// 	checkErr(err)
-	// 	if len(books) != 1 {
-	// 		panic("Book with ModifiedTitle should exist")
-	// 	}
-	// 	model.Delete(books[0].ID)
-	// 	err = model.Find(&books, store.Where("Title").Eq("ModifiedTitle"))
-	// 	checkErr(err)
-	// 	if len(books) != 0 {
-	// 		panic("Book with ModifiedTitle shouldn't exist")
-	// 	}
-	// }
+	// Sorted query
+	{
+		var books []*Book
+		// Ascending
+		err := model.Find(&books, store.Where("Author").Eq("Author1").OrderBy("Meta.TotalReads"))
+		checkErr(err)
+		if books[0].Meta.TotalReads != 100 || books[1].Meta.TotalReads != 150 {
+			panic("books aren't ordered asc correctly")
+		}
+		// Descending
+		err = model.Find(&books, store.Where("Author").Eq("Author1").OrderByDesc("Meta.TotalReads"))
+		checkErr(err)
+		if books[0].Meta.TotalReads != 150 || books[1].Meta.TotalReads != 100 {
+			panic("books aren't ordered desc correctly")
+		}
+	}
 
 	// Query, Update, and Save
 	{
@@ -148,10 +145,9 @@ func main() {
 		}
 	}
 
-	// ToDo: Create indexes
-	// ToDo: Use indexes for queries
-	// ToDo: Sorting?
-	// ToDo: Self-referencing conditionals
+	// ToDo: Indexes for improved perf
+	// ToDo: Self-referencing conditionals?
+	// ToDo: Multi-sort criteria?
 }
 
 func createMemStore() *store.Store {
