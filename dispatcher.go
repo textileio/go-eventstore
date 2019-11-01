@@ -6,25 +6,16 @@ import (
 	"sync"
 
 	"context"
-	"fmt"
 
 	datastore "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
+	"github.com/textileio/go-eventstore/core"
 	"golang.org/x/sync/errgroup"
 )
 
 type Reducer interface {
-	Reduce(event Event) error
+	Reduce(event core.Event) error
 }
-
-// @todo: Should we also support a `Transformer` to actually fetch raw event data as part of a pipeline?
-
-// Token is a simple unique ID used to reference a registered callback.
-type Token string
-
-const prefix = "ID"
-
-var lastID = 0
 
 // Dispatcher is used to dispatch events to registered reducers.
 //
@@ -33,15 +24,15 @@ var lastID = 0
 // which can be used to deregister the reducer later.
 type Dispatcher struct {
 	store    datastore.TxnDatastore
-	reducers map[Token]Reducer
-	lock     sync.Mutex
+	reducers []Reducer
+	lock     sync.RWMutex
+	lastID   int
 }
 
 // NewDispatcher creates a new EventDispatcher
 func NewDispatcher(store datastore.TxnDatastore) *Dispatcher {
 	return &Dispatcher{
-		store:    store,
-		reducers: make(map[Token]Reducer),
+		store: store,
 	}
 }
 
@@ -50,29 +41,16 @@ func (d *Dispatcher) Store() datastore.TxnDatastore {
 	return d.store
 }
 
-// Register takes a reducer to be invoked with each dispatched event and returns a token for de-registration.
-func (d *Dispatcher) Register(reducer Reducer) Token {
+// Register takes a reducer to be invoked with each dispatched event
+func (d *Dispatcher) Register(reducer Reducer) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	lastID++
-	id := Token(fmt.Sprintf("%s-%d", prefix, lastID))
-	d.reducers[id] = reducer
-	return id
-}
-
-// Deregister removes a reducer based on its token.
-func (d *Dispatcher) Deregister(token Token) error {
-	d.lock.Lock()
-	defer d.lock.Unlock()
-	if _, ok := d.reducers[token]; !ok {
-		return fmt.Errorf("`%s` does not map to a registered callback", token)
-	}
-	delete(d.reducers, token)
-	return nil
+	d.lastID++
+	d.reducers = append(d.reducers, reducer)
 }
 
 // Dispatch dispatches a payload to all registered reducers.
-func (d *Dispatcher) Dispatch(event Event) error {
+func (d *Dispatcher) Dispatch(event core.Event) error {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	// Key format: <timestamp>/<entity-id>/<type>

@@ -7,22 +7,20 @@ import (
 
 	datastore "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
+	"github.com/textileio/go-eventstore/core"
 )
 
 func TestNewEventDispatcher(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
-	event := &nullEvent{Timestamp: time.Now()}
+	event := core.NewNullEvent(time.Now())
 	dispatcher.Dispatch(event)
 }
 
 func TestRegister(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
-	token := dispatcher.Register(&nullReducer{})
-	if token != "ID-1" {
-		t.Error("callback registration failed")
-	}
+	dispatcher.Register(&nullReducer{})
 	if len(dispatcher.reducers) < 1 {
 		t.Error("expected callbacks map to have non-zero length")
 	}
@@ -32,7 +30,7 @@ func TestDispatchLock(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
 	dispatcher.Register(&slowReducer{})
-	event := &nullEvent{Timestamp: time.Now()}
+	event := core.NewNullEvent(time.Now())
 	t1 := time.Now()
 	wg := &sync.WaitGroup{}
 	go func() {
@@ -52,29 +50,17 @@ func TestDispatchLock(t *testing.T) {
 	}
 }
 
-func TestDeregister(t *testing.T) {
-	eventstore := NewTxMapDatastore()
-	dispatcher := NewDispatcher(eventstore)
-	if err := dispatcher.Deregister("string"); err == nil {
-		t.Error("expected invalid de-registration to return error")
-	}
-	token := dispatcher.Register(&nullReducer{})
-	if err := dispatcher.Deregister(token); err != nil {
-		t.Error("error attempting to deregister a valid callback")
-	}
-	if len(dispatcher.reducers) > 0 {
-		t.Error("expected callbacks map to have zero length")
-	}
-}
-
 func TestDispatch(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
-	event := &nullEvent{Timestamp: time.Now()}
+	event := core.NewNullEvent(time.Now())
 	if err := dispatcher.Dispatch(event); err != nil {
 		t.Error("unexpected error in dispatch call")
 	}
 	results, err := dispatcher.Query(query.Query{})
+	if err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
 	if len(results) != 1 {
 		t.Errorf("expected 1 result, got %d", len(results))
 	}
@@ -87,6 +73,9 @@ func TestDispatch(t *testing.T) {
 		t.Errorf("`%s` should be `error`", err)
 	}
 	results, err = dispatcher.Query(query.Query{})
+	if err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
 	if len(results) > 1 {
 		t.Errorf("expected 1 result, got %d", len(results))
 	}
@@ -107,10 +96,10 @@ func TestValidStore(t *testing.T) {
 func TestQuery(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
-	var events []Event
+	var events []core.Event
 	n := 100
 	for i := 1; i <= n; i++ {
-		events = append(events, &nullEvent{Timestamp: time.Now()})
+		events = append(events, core.NewNullEvent(time.Now()))
 		time.Sleep(time.Millisecond)
 	}
 	for _, event := range events {
