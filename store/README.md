@@ -31,6 +31,8 @@ _ = model.Delete(p.ID)
 Notes:
 * Pros: Easy to Use
 * Cons: Not much guarantees what happens between operations.
+* All operations are variadic, so can create, save, delete, etc multiple instances in one call.
+
 
 ### Explicit transactions
 Are separated between `ReadTxn` and `WriteTxn` ones. `ReadTxn` transactions only 
@@ -86,3 +88,4 @@ As can be seen, explicit txns may feel more bloated when used but should
 make sense in most logic that wants isolation guarantees during 
 business-logic operations. The separation between `Read` and `Update` 
 txn types is more of a safeguard for the developer than anything else.
+

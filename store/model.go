@@ -59,27 +59,27 @@ func (m *Model) FindByID(id es.EntityID, v interface{}) error {
 	})
 }
 
-func (m *Model) Create(v interface{}) error {
+func (m *Model) Create(vs ...interface{}) error {
 	return m.WriteTxn(func(txn *Txn) error {
-		return txn.Create(v)
+		return txn.Create(vs...)
 	})
 }
 
-func (m *Model) Delete(id es.EntityID) error {
+func (m *Model) Delete(ids ...es.EntityID) error {
 	return m.WriteTxn(func(txn *Txn) error {
-		return txn.Delete(id)
+		return txn.Delete(ids...)
 	})
 }
 
-func (m *Model) Save(v interface{}) error {
+func (m *Model) Save(vs ...interface{}) error {
 	return m.WriteTxn(func(txn *Txn) error {
-		return txn.Save(v)
+		return txn.Save(vs...)
 	})
 }
 
-func (m *Model) Has(id es.EntityID) (exists bool, err error) {
+func (m *Model) Has(ids ...es.EntityID) (exists bool, err error) {
 	m.ReadTxn(func(txn *Txn) error {
-		exists, err = txn.Has(id)
+		exists, err = txn.Has(ids...)
 		return err
 	})
 	return
@@ -100,97 +100,106 @@ type Txn struct {
 	actions []es.Action
 }
 
-func (t *Txn) Create(new interface{}) error {
-	if t.readonly {
-		return ErrReadonlyTx
-	}
-	id := getEntityID(new)
-	if id == es.EmptyEntityID {
-		id = setNewEntityID(new)
-	}
-	key := t.model.dsKey.ChildString(id.String())
-	exists, err := t.model.datastore.Has(key)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return errCantCreateExistingInstance
-	}
+func (t *Txn) Create(new ...interface{}) error {
+	for i := range new {
+		if t.readonly {
+			return ErrReadonlyTx
+		}
+		id := getEntityID(new[i])
+		if id == es.EmptyEntityID {
+			id = setNewEntityID(new[i])
+		}
+		key := t.model.dsKey.ChildString(id.String())
+		exists, err := t.model.datastore.Has(key)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return errCantCreateExistingInstance
+		}
 
-	a := es.Action{
-		Type:       es.Create,
-		EntityID:   id,
-		EntityType: t.model.schema.Ref,
-		Previous:   nil,
-		Current:    new,
+		a := es.Action{
+			Type:       es.Create,
+			EntityID:   id,
+			EntityType: t.model.schema.Ref,
+			Previous:   nil,
+			Current:    new[i],
+		}
+		t.actions = append(t.actions, a)
 	}
-	t.actions = append(t.actions, a)
-
 	return nil
 }
 
-func (t *Txn) Save(updated interface{}) error {
-	if t.readonly {
-		return ErrReadonlyTx
-	}
+func (t *Txn) Save(updated ...interface{}) error {
+	for i := range updated {
+		if t.readonly {
+			return ErrReadonlyTx
+		}
 
-	id := getEntityID(updated)
-	key := t.model.dsKey.ChildString(id.String())
-	beforeBytes, err := t.model.datastore.Get(key)
-	if err == ds.ErrNotFound {
-		return errCantSaveNonExistentInstance
-	}
-	if err != nil {
-		return err
-	}
+		id := getEntityID(updated[i])
+		key := t.model.dsKey.ChildString(id.String())
+		beforeBytes, err := t.model.datastore.Get(key)
+		if err == ds.ErrNotFound {
+			return errCantSaveNonExistentInstance
+		}
+		if err != nil {
+			return err
+		}
 
-	before := reflect.New(t.model.valueType.Elem()).Interface()
-	err = json.Unmarshal(beforeBytes, before)
-	if err != nil {
-		return err
+		before := reflect.New(t.model.valueType.Elem()).Interface()
+		err = json.Unmarshal(beforeBytes, before)
+		if err != nil {
+			return err
+		}
+		a := es.Action{
+			Type:       es.Save,
+			EntityID:   id,
+			EntityType: t.model.schema.Ref,
+			Previous:   before,
+			Current:    updated[i],
+		}
+		t.actions = append(t.actions, a)
 	}
-	a := es.Action{
-		Type:       es.Save,
-		EntityID:   id,
-		EntityType: t.model.schema.Ref,
-		Previous:   before,
-		Current:    updated,
-	}
-	t.actions = append(t.actions, a)
-
 	return nil
 }
 
-func (t *Txn) Delete(id es.EntityID) error {
-	if t.readonly {
-		return ErrReadonlyTx
+func (t *Txn) Delete(ids ...es.EntityID) error {
+	for i := range ids {
+		if t.readonly {
+			return ErrReadonlyTx
+		}
+		key := t.model.dsKey.ChildString(ids[i].String())
+		exists, err := t.model.datastore.Has(key)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return ErrNotFound
+		}
+		a := es.Action{
+			Type:       es.Delete,
+			EntityID:   ids[i],
+			EntityType: t.model.schema.Ref,
+			Previous:   nil,
+			Current:    nil,
+		}
+		t.actions = append(t.actions, a)
 	}
-	key := t.model.dsKey.ChildString(id.String())
-	exists, err := t.model.datastore.Has(key)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return ErrNotFound
-	}
-	a := es.Action{
-		Type:       es.Delete,
-		EntityID:   id,
-		EntityType: t.model.schema.Ref,
-		Previous:   nil,
-		Current:    nil,
-	}
-	t.actions = append(t.actions, a)
 	return nil
 }
 
-func (t *Txn) Has(id es.EntityID) (bool, error) {
-	key := t.model.dsKey.ChildString(id.String())
-	exists, err := t.model.datastore.Has(key)
-	if err != nil {
-		return false, err
+func (t *Txn) Has(ids ...es.EntityID) (bool, error) {
+	for i := range ids {
+		key := t.model.dsKey.ChildString(ids[i].String())
+		exists, err := t.model.datastore.Has(key)
+		if err != nil {
+			return false, err
+		}
+		if !exists {
+			return false, nil
+		}
 	}
-	return exists, nil
+	return true, nil
 }
 
 func (t *Txn) FindByID(id es.EntityID, v interface{}) error {
