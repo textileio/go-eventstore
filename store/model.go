@@ -75,7 +75,7 @@ func (m *Model) FindByID(id es.EntityID, v interface{}) error {
 	})
 }
 
-func (m *Model) Add(v interface{}) error {
+func (m *Model) Create(v interface{}) error {
 	return m.WriteTxn(func(txn *Txn) error {
 		return txn.Create(v)
 	})
@@ -99,6 +99,12 @@ func (m *Model) Has(id es.EntityID) (exists bool, err error) {
 		return err
 	})
 	return
+}
+
+func (m *Model) Find(result interface{}, q *Query) error {
+	return m.ReadTxn(func(txn *Txn) error {
+		return find(txn, result, q)
+	})
 }
 
 type Txn struct {

@@ -72,7 +72,7 @@ func TestCreateInstance(t *testing.T) {
 
 		t.Run("WithImplicitTx", func(t *testing.T) {
 			newPerson := &Person{Name: "Foo", Age: 42}
-			err = model.Add(newPerson)
+			err = model.Create(newPerson)
 			checkErr(t, err)
 			assertPersonInModel(t, model, newPerson)
 		})

@@ -86,4 +86,3 @@ As can be seen, explicit txns may feel more bloated when used but should
 make sense in most logic that wants isolation guarantees during 
 business-logic operations. The separation between `Read` and `Update` 
 txn types is more of a safeguard for the developer than anything else.
-
