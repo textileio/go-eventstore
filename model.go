@@ -8,13 +8,15 @@ import (
 	"github.com/alecthomas/jsonschema"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/textileio/go-eventstore/core"
+	"github.com/xeipuuv/gojsonschema"
 )
 
 var (
 	baseKey = ds.NewKey("/model/")
 
-	ErrNotFound   = errors.New("instance not found")
-	ErrReadonlyTx = errors.New("read only transaction")
+	ErrNotFound              = errors.New("instance not found")
+	ErrReadonlyTx            = errors.New("read only transaction")
+	ErrInvalidSchemaInstance = errors.New("instance doesn't correspond to schema")
 
 	errAlreadyDiscardedCommitedTxn = errors.New("can't commit discarded/commited txn")
 	errCantCreateExistingInstance  = errors.New("can't create already existing instance")
@@ -22,24 +24,28 @@ var (
 )
 
 type Model struct {
-	schema     *jsonschema.Schema
-	valueType  reflect.Type
-	datastore  ds.Datastore
-	eventcodec core.EventCodec
-	dispatcher *Dispatcher
-	dsKey      ds.Key
-	store      *Store
+	schema       *jsonschema.Schema
+	schemaLoader gojsonschema.JSONLoader
+	valueType    reflect.Type
+	datastore    ds.Datastore
+	eventcodec   core.EventCodec
+	dispatcher   *Dispatcher
+	dsKey        ds.Key
+	store        *Store
 }
 
 func NewModel(name string, defaultInstance interface{}, datastore ds.Datastore, dispatcher *Dispatcher, eventcreator core.EventCodec, s *Store) *Model {
+	schema := jsonschema.Reflect(defaultInstance)
+	schemaLoader := gojsonschema.NewGoLoader(schema)
 	m := &Model{
-		schema:     jsonschema.Reflect(defaultInstance),
-		datastore:  datastore,
-		valueType:  reflect.TypeOf(defaultInstance),
-		dispatcher: dispatcher,
-		eventcodec: eventcreator,
-		dsKey:      baseKey.ChildString(name),
-		store:      s,
+		schema:       schema,
+		schemaLoader: schemaLoader,
+		datastore:    datastore,
+		valueType:    reflect.TypeOf(defaultInstance),
+		dispatcher:   dispatcher,
+		eventcodec:   eventcreator,
+		dsKey:        baseKey.ChildString(name),
+		store:        s,
 	}
 
 	return m
@@ -91,6 +97,26 @@ func (m *Model) Find(result interface{}, q *Query) error {
 	})
 }
 
+func (m *Model) Reduce(event core.Event) error {
+	log.Debugf("reducer %s start", m.schema.Ref)
+	if event.Type() != m.schema.Ref {
+		log.Debugf("ignoring event from uninteresting type")
+		return nil
+	}
+
+	return m.eventcodec.Reduce(event, m.datastore, m.dsKey)
+}
+
+func (m *Model) validInstance(v interface{}) (bool, error) {
+	vLoader := gojsonschema.NewGoLoader(v)
+	r, err := gojsonschema.Validate(m.schemaLoader, vLoader)
+	if err != nil {
+		return false, err
+	}
+
+	return r.Valid(), nil
+}
+
 type Txn struct {
 	model     *Model
 	discarded bool
@@ -105,6 +131,14 @@ func (t *Txn) Create(new ...interface{}) error {
 		if t.readonly {
 			return ErrReadonlyTx
 		}
+		valid, err := t.model.validInstance(new[i])
+		if err != nil {
+			return err
+		}
+		if !valid {
+			return ErrInvalidSchemaInstance
+		}
+
 		id := getEntityID(new[i])
 		if id == core.EmptyEntityID {
 			id = setNewEntityID(new[i])
@@ -134,6 +168,13 @@ func (t *Txn) Save(updated ...interface{}) error {
 	for i := range updated {
 		if t.readonly {
 			return ErrReadonlyTx
+		}
+		valid, err := t.model.validInstance(updated[i])
+		if err != nil {
+			return err
+		}
+		if !valid {
+			return ErrInvalidSchemaInstance
 		}
 
 		id := getEntityID(updated[i])
@@ -230,16 +271,6 @@ func (t *Txn) Commit() error {
 		}
 	}
 	return nil
-}
-
-func (m *Model) Reduce(event core.Event) error {
-	log.Debugf("reducer %s start", m.schema.Ref)
-	if event.Type() != m.schema.Ref {
-		log.Debugf("ignoring event from uninteresting type")
-		return nil
-	}
-
-	return m.eventcodec.Reduce(event, m.datastore, m.dsKey)
 }
 
 func (t *Txn) Discard() {

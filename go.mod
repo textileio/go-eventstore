@@ -14,6 +14,7 @@ require (
 	github.com/mattn/go-isatty v0.0.7 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
+	github.com/xeipuuv/gojsonschema v1.2.0
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 	golang.org/x/sys v0.0.0-20190626221950-04f50cda93cb // indirect
 )

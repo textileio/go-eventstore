@@ -1,6 +1,7 @@
 package eventstore
 
 import (
+	"errors"
 	"os"
 	"reflect"
 	"testing"
@@ -220,13 +221,29 @@ func TestDeleteInstance(t *testing.T) {
 	}
 }
 
-// ToDo
+type PersonFake struct {
+	ID   core.EntityID
+	Name string
+}
+
 func TestInvalidActions(t *testing.T) {
-	t.Run("Add", func(t *testing.T) {
-		// Compared to schema
+	t.Parallel()
+
+	store := createTestStore()
+	model, err := store.Register("Person", &Person{})
+	checkErr(t, err)
+	t.Run("Create", func(t *testing.T) {
+		p := &PersonFake{Name: "fake"}
+		if err := model.Create(p); !errors.Is(err, ErrInvalidSchemaInstance) {
+			t.Fatalf("instance should be invalid compared to schema, got: %v", err)
+		}
 	})
-	t.Run("Update", func(t *testing.T) {
-		// Compared to schema
+	t.Run("Save", func(t *testing.T) {
+		p := &PersonFake{Name: "fake"}
+		model.Create(p)
+		if err := model.Save(p); !errors.Is(err, ErrInvalidSchemaInstance) {
+			t.Fatalf("instance should be invalid compared to schema, got: %v", err)
+		}
 	})
 }
 
