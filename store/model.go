@@ -110,11 +110,6 @@ type Txn struct {
 	actions []es.Action
 }
 
-type SaveOp struct {
-	Before interface{}
-	After  interface{}
-}
-
 func (t *Txn) Create(new interface{}) error {
 	if t.readonly {
 		return ErrReadonlyTx
