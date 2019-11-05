@@ -33,8 +33,8 @@ func TestDispatchLock(t *testing.T) {
 	event := core.NewNullEvent(time.Now())
 	t1 := time.Now()
 	wg := &sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 		if err := dispatcher.Dispatch(event); err != nil {
 			t.Error("unexpected error in dispatch call")
