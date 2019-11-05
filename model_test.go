@@ -107,8 +107,116 @@ func TestCreateInstance(t *testing.T) {
 		assertPersonInModel(t, model, newPerson2)
 	})
 
-	// ToDo: Add test for `.Create` on an instance with an
-	// assigned ID (shouldn't be overwritten)
+	t.Run("WithDefinedID", func(t *testing.T) {
+		t.Parallel()
+		store := createTestStore()
+		model, err := store.Register("Person", &Person{})
+		checkErr(t, err)
+
+		definedID := core.NewEntityID()
+		newPerson := &Person{ID: definedID, Name: "Foo1", Age: 42}
+		checkErr(t, model.Create(newPerson))
+
+		exists, err := model.Has(definedID)
+		checkErr(t, err)
+		if !exists {
+			t.Fatal("manually defined entity ID should exist")
+		}
+		assertPersonInModel(t, model, newPerson)
+	})
+
+	t.Run("Re-Create", func(t *testing.T) {
+		t.Parallel()
+		store := createTestStore()
+		m, err := store.Register("Person", &Person{})
+		checkErr(t, err)
+
+		p := &Person{Name: "Foo1", Age: 42}
+		checkErr(t, m.Create(p))
+		p2 := &Person{ID: p.ID, Name: "Fool2", Age: 43}
+		if err = m.Create(p2); !errors.Is(err, errCantCreateExistingInstance) {
+			t.Fatal("shouldn't create already existing instance")
+		}
+	})
+}
+
+func TestReadTxnValidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("TryCreate", func(t *testing.T) {
+		t.Parallel()
+		store := createTestStore()
+		m, err := store.Register("Person", &Person{})
+		checkErr(t, err)
+		p := &Person{Name: "Foo1", Age: 42}
+		err = m.ReadTxn(func(txn *Txn) error {
+			return txn.Create(p)
+		})
+		if !errors.Is(err, ErrReadonlyTx) {
+			t.Fatal("shouldn't write on read-only transaction")
+		}
+	})
+	t.Run("TrySave", func(t *testing.T) {
+		t.Parallel()
+		store := createTestStore()
+		m, err := store.Register("Person", &Person{})
+		checkErr(t, err)
+		p := &Person{Name: "Foo1", Age: 42}
+		checkErr(t, m.Create(p))
+		err = m.ReadTxn(func(txn *Txn) error {
+			return txn.Save(p)
+		})
+		if !errors.Is(err, ErrReadonlyTx) {
+			t.Fatal("shouldn't write on read-only transaction")
+		}
+	})
+	t.Run("TryDelete", func(t *testing.T) {
+		t.Parallel()
+		store := createTestStore()
+		m, err := store.Register("Person", &Person{})
+		checkErr(t, err)
+		p := &Person{Name: "Foo1", Age: 42}
+		checkErr(t, m.Create(p))
+		err = m.ReadTxn(func(txn *Txn) error {
+			return txn.Delete(p.ID)
+		})
+		if !errors.Is(err, ErrReadonlyTx) {
+			t.Fatal("shouldn't write on read-only transaction")
+		}
+	})
+}
+
+func TestVariadic(t *testing.T) {
+	t.Parallel()
+
+	store := createTestStore()
+	m, err := store.Register("Person", &Person{})
+	checkErr(t, err)
+
+	p1 := &Person{Name: "Foo1", Age: 42}
+	p2 := &Person{Name: "Foo2", Age: 43}
+	p3 := &Person{Name: "Foo3", Age: 44}
+	checkErr(t, m.Create(p1, p2, p3))
+	assertPersonInModel(t, m, p1)
+	assertPersonInModel(t, m, p2)
+	assertPersonInModel(t, m, p3)
+
+	p1.Age, p2.Age, p3.Age = 51, 52, 53
+	checkErr(t, m.Save(p1, p2, p3))
+	assertPersonInModel(t, m, p1)
+	assertPersonInModel(t, m, p2)
+	assertPersonInModel(t, m, p3)
+
+	checkErr(t, m.Delete(p1.ID, p2.ID, p3.ID))
+	exist1, err := m.Has(p1.ID)
+	checkErr(t, err)
+	exist2, err := m.Has(p1.ID)
+	checkErr(t, err)
+	exist3, err := m.Has(p1.ID)
+	checkErr(t, err)
+	if exist1 || exist2 || exist3 {
+		t.Fatal("deleted instances shouldn't exist")
+	}
 }
 
 func TestGetInstance(t *testing.T) {
@@ -156,40 +264,49 @@ func TestGetInstance(t *testing.T) {
 	})
 }
 
-func TestUpdateInstance(t *testing.T) {
+func TestSaveInstance(t *testing.T) {
 	t.Parallel()
 
-	store := createTestStore()
-	model, err := store.Register("Person", &Person{})
-	checkErr(t, err)
-
-	newPerson := &Person{Name: "Alice", Age: 42}
-	err = model.WriteTxn(func(txn *Txn) error {
-		return txn.Create(newPerson)
-	})
-	checkErr(t, err)
-
-	err = model.WriteTxn(func(txn *Txn) error {
-		p := &Person{}
-		err := txn.FindByID(newPerson.ID, p)
+	t.Run("Simple", func(t *testing.T) {
+		t.Parallel()
+		store := createTestStore()
+		model, err := store.Register("Person", &Person{})
 		checkErr(t, err)
 
-		p.Name = "Bob"
-		return txn.Save(p)
+		newPerson := &Person{Name: "Alice", Age: 42}
+		err = model.WriteTxn(func(txn *Txn) error {
+			return txn.Create(newPerson)
+		})
+		checkErr(t, err)
+
+		err = model.WriteTxn(func(txn *Txn) error {
+			p := &Person{}
+			err := txn.FindByID(newPerson.ID, p)
+			checkErr(t, err)
+
+			p.Name = "Bob"
+			return txn.Save(p)
+		})
+		checkErr(t, err)
+
+		person := &Person{}
+		err = model.FindByID(newPerson.ID, person)
+		checkErr(t, err)
+		if person.ID != newPerson.ID || person.Age != 42 || person.Name != "Bob" {
+			t.Fatalf(errInvalidInstanceState)
+		}
 	})
-	checkErr(t, err)
+	t.Run("SaveNonExistant", func(t *testing.T) {
+		t.Parallel()
+		store := createTestStore()
+		m, err := store.Register("Person", &Person{})
+		checkErr(t, err)
 
-	// Under the hood here the instance update went through
-	// the dispatcher, then the reducer, which will ultimately
-	// apply the change to the current instance state that
-	// should make the code below behave as expected
-
-	person := &Person{}
-	err = model.FindByID(newPerson.ID, person)
-	checkErr(t, err)
-	if person.ID != newPerson.ID || person.Age != 42 || person.Name != "Bob" {
-		t.Fatalf(errInvalidInstanceState)
-	}
+		p := &Person{Name: "Alice", Age: 42}
+		if err := m.Save(p); !errors.Is(err, errCantSaveNonExistentInstance) {
+			t.Fatal("shouldn't save non-existent instasnce")
+		}
+	})
 }
 
 func TestDeleteInstance(t *testing.T) {

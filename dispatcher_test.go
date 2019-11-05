@@ -33,8 +33,8 @@ func TestDispatchLock(t *testing.T) {
 	event := core.NewNullEvent(time.Now())
 	t1 := time.Now()
 	wg := &sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 		if err := dispatcher.Dispatch(event); err != nil {
 			t.Error("unexpected error in dispatch call")
@@ -93,7 +93,7 @@ func TestValidStore(t *testing.T) {
 	}
 }
 
-func TestQuery(t *testing.T) {
+func TestDispatcherQuery(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
 	var events []core.Event

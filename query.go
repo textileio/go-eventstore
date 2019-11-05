@@ -2,6 +2,7 @@ package eventstore
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -9,20 +10,13 @@ import (
 	dsquery "github.com/ipfs/go-datastore/query"
 )
 
-type operation int
-
-const (
-	eq operation = iota
-	// ToDo: Further operations here
-)
-
 var (
-	panicInvalidSortingField = "sorting field doesn't correspond to instance type"
-	panicCantCompareOnSort   = "can't compare while sorting"
+	ErrInvalidSortingField = errors.New("sorting field doesn't correspond to instance type")
+	ErrCantCompareOnSort   = errors.New("can't compare while sorting")
 )
 
 type Query struct {
-	ands []*Criterion
+	ands []*criterion
 	ors  []*Query
 	sort struct {
 		field string
@@ -30,14 +24,14 @@ type Query struct {
 	}
 }
 
-func Where(field string) *Criterion {
-	return &Criterion{
+func Where(field string) *criterion {
+	return &criterion{
 		fieldPath: field,
 	}
 }
 
-func (q *Query) And(field string) *Criterion {
-	return &Criterion{
+func (q *Query) And(field string) *criterion {
+	return &criterion{
 		fieldPath: field,
 		query:     q,
 	}
@@ -97,6 +91,8 @@ func (q *Query) match(v reflect.Value) (bool, error) {
 	return false, nil
 }
 
+// Find executes a query and store the result in res which should be a slice of
+// pointers with the correct model type. If the slice isn't empty, will be emptied.
 func (t *Txn) Find(res interface{}, q *Query) error {
 	// ToDo: context cancellation? (to call dsr.Close())
 	valRes := reflect.ValueOf(res)
@@ -115,7 +111,7 @@ func (t *Txn) Find(res interface{}, q *Query) error {
 	}
 
 	resSlice := valRes.Elem()
-	resSlice.Set(resSlice.Slice(0, 0)) // ToDo: Document that received slice is niled
+	resSlice.Set(resSlice.Slice(0, 0))
 	// ToDo: also check `res` is slice of *model type*
 	var unsorted []reflect.Value
 	for {
@@ -136,24 +132,34 @@ func (t *Txn) Find(res interface{}, q *Query) error {
 		}
 	}
 	if q.sort.field != "" {
+		var wrongField, cantCompare bool
 		sort.Slice(unsorted, func(i, j int) bool {
 			fieldI, err := traverseFieldPath(unsorted[i], q.sort.field)
 			if err != nil {
-				panic(panicInvalidSortingField)
+				wrongField = true
+				return false
 			}
 			fieldJ, err := traverseFieldPath(unsorted[j], q.sort.field)
 			if err != nil {
-				panic(panicInvalidSortingField)
+				wrongField = true
+				return false
 			}
 			res, err := compare(fieldI, fieldJ)
 			if err != nil {
-				panic(panicCantCompareOnSort)
+				cantCompare = true
+				return false
 			}
 			if q.sort.desc {
 				res *= -1
 			}
 			return res < 0
 		})
+		if wrongField {
+			return ErrInvalidSortingField
+		}
+		if cantCompare {
+			return ErrCantCompareOnSort
+		}
 	}
 
 	for i := range unsorted {

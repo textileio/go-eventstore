@@ -31,28 +31,71 @@ import (
 	"time"
 )
 
-type Criterion struct {
+type operation int
+
+const (
+	eq operation = iota
+	ne           // !=
+	gt           // >
+	lt           // <
+	ge           // >=
+	le           // <=
+	fn           // func
+)
+
+type criterion struct {
 	fieldPath string
 	operation operation
 	value     interface{}
 	query     *Query
 }
 
-func (c *Criterion) Eq(value interface{}) *Query {
-	c.operation = eq
-	c.value = value
+// Eq is an equality operator against a field
+func (c *criterion) Eq(value interface{}) *Query {
+	return c.createcriterion(eq, value)
+}
 
-	// First Criterion of a query?
+// Ne is a not equal operator against a field
+func (c *criterion) Ne(value interface{}) *Query {
+	return c.createcriterion(ne, value)
+}
+
+// Gt is a greater operator against a field
+func (c *criterion) Gt(value interface{}) *Query {
+	return c.createcriterion(gt, value)
+}
+
+// Lt is a less operation against a field
+func (c *criterion) Lt(value interface{}) *Query {
+	return c.createcriterion(lt, value)
+}
+
+// Ge is a greater or equal operator against a field
+func (c *criterion) Ge(value interface{}) *Query {
+	return c.createcriterion(ge, value)
+}
+
+// Le is a less or equal operator against a field
+func (c *criterion) Le(value interface{}) *Query {
+	return c.createcriterion(le, value)
+}
+
+// Fn is a custom evaluation function against a field
+func (c *criterion) Fn(mf MatchFunc) *Query {
+	return c.createcriterion(fn, mf)
+}
+
+func (c *criterion) createcriterion(op operation, value interface{}) *Query {
+	c.operation = op
+	c.value = value
 	if c.query == nil {
 		c.query = &Query{}
 	}
-
 	c.query.ands = append(c.query.ands, c)
-
 	return c.query
 }
 
-func (c *Criterion) compare(testedValue, criterionValue interface{}) (int, error) {
+func (c *criterion) compare(testedValue, criterionValue interface{}) (int, error) {
 	if testedValue == nil || criterionValue == nil {
 		if testedValue == criterionValue {
 			return 0, nil
@@ -71,34 +114,48 @@ func (c *Criterion) compare(testedValue, criterionValue interface{}) (int, error
 	return compare(testedValue, criterionValue)
 }
 
-func (c *Criterion) match(testValue interface{}) (bool, error) {
-	result, err := c.compare(testValue, c.value)
-	if err != nil {
-		return false, err
-	}
+func (c *criterion) match(value reflect.Value) (bool, error) {
+	valueInterface := value.Interface()
 	switch c.operation {
-	case eq:
-		return result == 0, nil
+	case fn:
+		return c.value.(MatchFunc)(valueInterface)
 	default:
-		panic("invalid operator")
+		result, err := c.compare(valueInterface, c.value)
+		if err != nil {
+			return false, err
+		}
+		switch c.operation {
+		case eq:
+			return result == 0, nil
+		case ne:
+			return result != 0, nil
+		case gt:
+			return result > 0, nil
+		case lt:
+			return result < 0, nil
+		case le:
+			return result < 0 || result == 0, nil
+		case ge:
+			return result > 0 || result == 0, nil
+		default:
+			panic("invalid operation")
+		}
 	}
 }
 
 func traverseFieldPath(value reflect.Value, fieldPath string) (reflect.Value, error) {
 	fields := strings.Split(fieldPath, ".")
-
-	current := value // ToDo: Can `current` be deleted?
 	for i := range fields {
-		if current.Kind() == reflect.Ptr {
-			current = current.Elem()
+		if value.Kind() == reflect.Ptr {
+			value = value.Elem()
 		}
-		current = current.FieldByName(fields[i])
+		value = value.FieldByName(fields[i])
 
-		if !current.IsValid() {
+		if !value.IsValid() {
 			return reflect.Value{}, fmt.Errorf("instance field %s doesn't exist in type %s", fieldPath, value)
 		}
 	}
-	return current, nil
+	return value, nil
 }
 
 type errTypeMismatch struct {
@@ -119,6 +176,9 @@ func (e *errTypeMismatch) Error() string {
 type Comparer interface {
 	Compare(other interface{}) (int, error)
 }
+
+// MatchFunc is a function used to test an arbitrary matching value in a query
+type MatchFunc func(value interface{}) (bool, error)
 
 func compare(value, other interface{}) (int, error) {
 	switch t := value.(type) {
