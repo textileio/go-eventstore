@@ -52,16 +52,24 @@ type Criterion struct {
 }
 
 func (c *Criterion) Eq(value interface{}) *Query {
-	c.operation = eq
-	c.value = value
+	return c.createCriterion(eq, value)
+}
 
-	// First Criterion of a query?
+func (c *Criterion) Ne(value interface{}) *Query {
+	return c.createCriterion(ne, value)
+}
+
+func (c *Criterion) Gt(value interface{}) *Query {
+	return c.createCriterion(gt, value)
+}
+
+func (c *Criterion) createCriterion(op operation, value interface{}) *Query {
+	c.operation = op
+	c.value = value
 	if c.query == nil {
 		c.query = &Query{}
 	}
-
 	c.query.ands = append(c.query.ands, c)
-
 	return c.query
 }
 
@@ -84,14 +92,14 @@ func (c *Criterion) compare(testedValue, criterionValue interface{}) (int, error
 	return compare(testedValue, criterionValue)
 }
 
-func (c *Criterion) match(testValue interface{}) (bool, error) {
+func (c *Criterion) match(testValue reflect.Value) (bool, error) {
 	switch c.operation {
 	case fn:
 		return c.value.(MatchFunc)(testValue)
 	case isnil:
 		return reflect.ValueOf(testValue).IsNil(), nil
 	default:
-		result, err := c.compare(testValue, c.value)
+		result, err := c.compare(testValue.Interface(), c.value)
 		if err != nil {
 			return false, err
 		}
@@ -116,7 +124,6 @@ func (c *Criterion) match(testValue interface{}) (bool, error) {
 
 func traverseFieldPath(value reflect.Value, fieldPath string) (reflect.Value, error) {
 	fields := strings.Split(fieldPath, ".")
-
 	current := value // ToDo: Can `current` be deleted?
 	for i := range fields {
 		if current.Kind() == reflect.Ptr {

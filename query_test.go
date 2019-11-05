@@ -53,6 +53,14 @@ var (
 		queryTest{name: "AndAuthorNestedTotalReads", query: Where("Author").Eq("Author1").And("Meta.TotalReads").Eq(10), resIdx: []int{0}},
 
 		queryTest{name: "OrAuthor", query: Where("Author").Eq("Author1").Or(Where("Author").Eq("Author3")), resIdx: []int{0, 1, 2, 4}},
+
+		queryTest{name: "NeAuthor", query: Where("Author").Ne("Author1"), resIdx: []int{3, 4}},
+		queryTest{name: "NeTotalReads", query: Where("Meta.TotalReads").Ne(114), resIdx: []int{0, 1, 2, 4}},
+		queryTest{name: "NeRating", query: Where("Meta.Rating").Ne(4.8), resIdx: []int{0, 1, 2, 3}},
+
+		queryTest{name: "GtAuthor", query: Where("Author").Gt("Author2"), resIdx: []int{4}},
+		queryTest{name: "GtTotalReads", query: Where("Meta.TotalReads").Gt(30), resIdx: []int{3, 4}},
+		queryTest{name: "GtRating", query: Where("Meta.Rating").Gt(3.6), resIdx: []int{2, 3, 4}},
 	}
 )
 
