@@ -9,6 +9,18 @@ import (
 	"github.com/textileio/go-eventstore/core"
 )
 
+type book struct {
+	ID     core.EntityID
+	Title  string
+	Author string
+	Meta   bookStats
+}
+
+type bookStats struct {
+	TotalReads int
+	Rating     float64
+}
+
 type queryTest struct {
 	name    string
 	query   *Query
@@ -36,6 +48,11 @@ var (
 		queryTest{name: "FromAuthor1Asc", query: Where("Author").Eq("Author1").OrderBy("Title"), resIdx: []int{0, 1, 2}, ordered: true},
 		queryTest{name: "FromAuthor1Desc", query: Where("Author").Eq("Author1").OrderByDesc("Title"), resIdx: []int{2, 1, 0}, ordered: true},
 		queryTest{name: "AllDesc", query: (&Query{}).OrderByDesc("Title"), resIdx: []int{4, 3, 2, 1, 0}, ordered: true},
+
+		queryTest{name: "AndAuthor1Title2", query: Where("Author").Eq("Author1").And("Title").Eq("Title2"), resIdx: []int{1}},
+		queryTest{name: "AndAuthorNestedTotalReads", query: Where("Author").Eq("Author1").And("Meta.TotalReads").Eq(10), resIdx: []int{0}},
+
+		queryTest{name: "OrAuthor", query: Where("Author").Eq("Author1").Or(Where("Author").Eq("Author3")), resIdx: []int{0, 1, 2, 4}},
 	}
 )
 
@@ -74,17 +91,7 @@ func TestModelQuery(t *testing.T) {
 	}
 }
 
-type book struct {
-	ID     core.EntityID
-	Title  string
-	Author string
-	Meta   bookStats
-}
-
-type bookStats struct {
-	TotalReads int
-	Rating     float64
-}
+// ToDo: invalid sorting field
 
 func createModelWithData(t *testing.T) *Model {
 	store := createTestStore()
