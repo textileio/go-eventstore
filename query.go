@@ -2,6 +2,7 @@ package eventstore
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -10,8 +11,8 @@ import (
 )
 
 var (
-	panicInvalidSortingField = "sorting field doesn't correspond to instance type"
-	panicCantCompareOnSort   = "can't compare while sorting"
+	ErrInvalidSortingField = errors.New("sorting field doesn't correspond to instance type")
+	ErrCantCompareOnSort   = errors.New("can't compare while sorting")
 )
 
 type Query struct {
@@ -131,24 +132,34 @@ func (t *Txn) Find(res interface{}, q *Query) error {
 		}
 	}
 	if q.sort.field != "" {
+		var wrongField, cantCompare bool
 		sort.Slice(unsorted, func(i, j int) bool {
 			fieldI, err := traverseFieldPath(unsorted[i], q.sort.field)
 			if err != nil {
-				panic(panicInvalidSortingField)
+				wrongField = true
+				return false
 			}
 			fieldJ, err := traverseFieldPath(unsorted[j], q.sort.field)
 			if err != nil {
-				panic(panicInvalidSortingField)
+				wrongField = true
+				return false
 			}
 			res, err := compare(fieldI, fieldJ)
 			if err != nil {
-				panic(panicCantCompareOnSort)
+				cantCompare = true
+				return false
 			}
 			if q.sort.desc {
 				res *= -1
 			}
 			return res < 0
 		})
+		if wrongField {
+			return ErrInvalidSortingField
+		}
+		if cantCompare {
+			return ErrCantCompareOnSort
+		}
 	}
 
 	for i := range unsorted {

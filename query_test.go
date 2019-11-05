@@ -1,6 +1,7 @@
 package eventstore
 
 import (
+	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -93,6 +94,7 @@ var (
 )
 
 func TestModelQuery(t *testing.T) {
+	t.Parallel()
 	m := createModelWithData(t)
 	for _, q := range queries {
 		q := q
@@ -127,7 +129,14 @@ func TestModelQuery(t *testing.T) {
 	}
 }
 
-// ToDo: invalid sorting field
+func TestInvalidSortField(t *testing.T) {
+	t.Parallel()
+	m := createModelWithData(t)
+	var res []*book
+	if err := m.Find(&res, (&Query{}).OrderBy("WrongFieldName")); !errors.Is(err, ErrInvalidSortingField) {
+		t.Fatal("query should fail using an invalid field")
+	}
+}
 
 func createModelWithData(t *testing.T) *Model {
 	store := createTestStore()

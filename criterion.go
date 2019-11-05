@@ -145,18 +145,17 @@ func (c *criterion) match(value reflect.Value) (bool, error) {
 
 func traverseFieldPath(value reflect.Value, fieldPath string) (reflect.Value, error) {
 	fields := strings.Split(fieldPath, ".")
-	current := value // ToDo: Can `current` be deleted?
 	for i := range fields {
-		if current.Kind() == reflect.Ptr {
-			current = current.Elem()
+		if value.Kind() == reflect.Ptr {
+			value = value.Elem()
 		}
-		current = current.FieldByName(fields[i])
+		value = value.FieldByName(fields[i])
 
-		if !current.IsValid() {
+		if !value.IsValid() {
 			return reflect.Value{}, fmt.Errorf("instance field %s doesn't exist in type %s", fieldPath, value)
 		}
 	}
-	return current, nil
+	return value, nil
 }
 
 type errTypeMismatch struct {

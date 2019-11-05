@@ -186,7 +186,38 @@ func TestReadTxnValidation(t *testing.T) {
 	})
 }
 
-// ToDo: Test variadic
+func TestVariadic(t *testing.T) {
+	t.Parallel()
+
+	store := createTestStore()
+	m, err := store.Register("Person", &Person{})
+	checkErr(t, err)
+
+	p1 := &Person{Name: "Foo1", Age: 42}
+	p2 := &Person{Name: "Foo2", Age: 43}
+	p3 := &Person{Name: "Foo3", Age: 44}
+	checkErr(t, m.Create(p1, p2, p3))
+	assertPersonInModel(t, m, p1)
+	assertPersonInModel(t, m, p2)
+	assertPersonInModel(t, m, p3)
+
+	p1.Age, p2.Age, p3.Age = 51, 52, 53
+	checkErr(t, m.Save(p1, p2, p3))
+	assertPersonInModel(t, m, p1)
+	assertPersonInModel(t, m, p2)
+	assertPersonInModel(t, m, p3)
+
+	checkErr(t, m.Delete(p1.ID, p2.ID, p3.ID))
+	exist1, err := m.Has(p1.ID)
+	checkErr(t, err)
+	exist2, err := m.Has(p1.ID)
+	checkErr(t, err)
+	exist3, err := m.Has(p1.ID)
+	checkErr(t, err)
+	if exist1 || exist2 || exist3 {
+		t.Fatal("deleted instances shouldn't exist")
+	}
+}
 
 func TestGetInstance(t *testing.T) {
 	t.Parallel()
