@@ -55,12 +55,24 @@ var (
 		queryTest{name: "OrAuthor", query: Where("Author").Eq("Author1").Or(Where("Author").Eq("Author3")), resIdx: []int{0, 1, 2, 4}},
 
 		queryTest{name: "NeAuthor", query: Where("Author").Ne("Author1"), resIdx: []int{3, 4}},
-		queryTest{name: "NeTotalReads", query: Where("Meta.TotalReads").Ne(114), resIdx: []int{0, 1, 2, 4}},
-		queryTest{name: "NeRating", query: Where("Meta.Rating").Ne(4.8), resIdx: []int{0, 1, 2, 3}},
+		queryTest{name: "NeTotalReads", query: Where("Meta.TotalReads").Ne(30), resIdx: []int{0, 1, 3, 4}},
+		queryTest{name: "NeRating", query: Where("Meta.Rating").Ne(3.6), resIdx: []int{0, 2, 3, 4}},
 
 		queryTest{name: "GtAuthor", query: Where("Author").Gt("Author2"), resIdx: []int{4}},
 		queryTest{name: "GtTotalReads", query: Where("Meta.TotalReads").Gt(30), resIdx: []int{3, 4}},
 		queryTest{name: "GtRating", query: Where("Meta.Rating").Gt(3.6), resIdx: []int{2, 3, 4}},
+
+		queryTest{name: "GeAuthor", query: Where("Author").Ge("Author2"), resIdx: []int{3, 4}},
+		queryTest{name: "GeTotalReads", query: Where("Meta.TotalReads").Ge(30), resIdx: []int{2, 3, 4}},
+		queryTest{name: "GeRating", query: Where("Meta.Rating").Ge(3.6), resIdx: []int{1, 2, 3, 4}},
+
+		queryTest{name: "LtAuthor", query: Where("Author").Lt("Author2"), resIdx: []int{0, 1, 2}},
+		queryTest{name: "LtTotalReads", query: Where("Meta.TotalReads").Lt(30), resIdx: []int{0, 1}},
+		queryTest{name: "LtRating", query: Where("Meta.Rating").Lt(3.6), resIdx: []int{0}},
+
+		queryTest{name: "LeAuthor", query: Where("Author").Le("Author2"), resIdx: []int{0, 1, 2, 3}},
+		queryTest{name: "LeTotalReads", query: Where("Meta.TotalReads").Le(30), resIdx: []int{0, 1, 2}},
+		queryTest{name: "LeRating", query: Where("Meta.Rating").Le(3.6), resIdx: []int{0, 1}},
 	}
 )
 

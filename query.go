@@ -15,7 +15,7 @@ var (
 )
 
 type Query struct {
-	ands []*Criterion
+	ands []*criterion
 	ors  []*Query
 	sort struct {
 		field string
@@ -23,14 +23,14 @@ type Query struct {
 	}
 }
 
-func Where(field string) *Criterion {
-	return &Criterion{
+func Where(field string) *criterion {
+	return &criterion{
 		fieldPath: field,
 	}
 }
 
-func (q *Query) And(field string) *Criterion {
-	return &Criterion{
+func (q *Query) And(field string) *criterion {
+	return &criterion{
 		fieldPath: field,
 		query:     q,
 	}

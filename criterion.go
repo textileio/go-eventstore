@@ -44,26 +44,44 @@ const (
 	isnil           // test's for nil
 )
 
-type Criterion struct {
+type criterion struct {
 	fieldPath string
 	operation operation
 	value     interface{}
 	query     *Query
 }
 
-func (c *Criterion) Eq(value interface{}) *Query {
-	return c.createCriterion(eq, value)
+// Eq is an equality operator against a field
+func (c *criterion) Eq(value interface{}) *Query {
+	return c.createcriterion(eq, value)
 }
 
-func (c *Criterion) Ne(value interface{}) *Query {
-	return c.createCriterion(ne, value)
+// Ne is a not equal operator against a field
+func (c *criterion) Ne(value interface{}) *Query {
+	return c.createcriterion(ne, value)
 }
 
-func (c *Criterion) Gt(value interface{}) *Query {
-	return c.createCriterion(gt, value)
+// Gt is a greater operator against a field
+func (c *criterion) Gt(value interface{}) *Query {
+	return c.createcriterion(gt, value)
 }
 
-func (c *Criterion) createCriterion(op operation, value interface{}) *Query {
+// Lt is a less operation against a field
+func (c *criterion) Lt(value interface{}) *Query {
+	return c.createcriterion(lt, value)
+}
+
+// Ge is a greater or equal operator against a field
+func (c *criterion) Ge(value interface{}) *Query {
+	return c.createcriterion(ge, value)
+}
+
+// Le is a less or equal operator against a field
+func (c *criterion) Le(value interface{}) *Query {
+	return c.createcriterion(le, value)
+}
+
+func (c *criterion) createcriterion(op operation, value interface{}) *Query {
 	c.operation = op
 	c.value = value
 	if c.query == nil {
@@ -73,7 +91,7 @@ func (c *Criterion) createCriterion(op operation, value interface{}) *Query {
 	return c.query
 }
 
-func (c *Criterion) compare(testedValue, criterionValue interface{}) (int, error) {
+func (c *criterion) compare(testedValue, criterionValue interface{}) (int, error) {
 	if testedValue == nil || criterionValue == nil {
 		if testedValue == criterionValue {
 			return 0, nil
@@ -92,7 +110,7 @@ func (c *Criterion) compare(testedValue, criterionValue interface{}) (int, error
 	return compare(testedValue, criterionValue)
 }
 
-func (c *Criterion) match(testValue reflect.Value) (bool, error) {
+func (c *criterion) match(testValue reflect.Value) (bool, error) {
 	switch c.operation {
 	case fn:
 		return c.value.(MatchFunc)(testValue)
