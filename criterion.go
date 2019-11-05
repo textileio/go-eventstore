@@ -34,14 +34,13 @@ import (
 type operation int
 
 const (
-	eq    operation = iota
-	ne              // !=
-	gt              // >
-	lt              // <
-	ge              // >=
-	le              // <=
-	fn              // func
-	isnil           // test's for nil
+	eq operation = iota
+	ne           // !=
+	gt           // >
+	lt           // <
+	ge           // >=
+	le           // <=
+	fn           // func
 )
 
 type criterion struct {
@@ -81,6 +80,11 @@ func (c *criterion) Le(value interface{}) *Query {
 	return c.createcriterion(le, value)
 }
 
+// Fn is a custom evaluation function against a field
+func (c *criterion) Fn(mf MatchFunc) *Query {
+	return c.createcriterion(fn, mf)
+}
+
 func (c *criterion) createcriterion(op operation, value interface{}) *Query {
 	c.operation = op
 	c.value = value
@@ -110,14 +114,13 @@ func (c *criterion) compare(testedValue, criterionValue interface{}) (int, error
 	return compare(testedValue, criterionValue)
 }
 
-func (c *criterion) match(testValue reflect.Value) (bool, error) {
+func (c *criterion) match(value reflect.Value) (bool, error) {
+	valueInterface := value.Interface()
 	switch c.operation {
 	case fn:
-		return c.value.(MatchFunc)(testValue)
-	case isnil:
-		return reflect.ValueOf(testValue).IsNil(), nil
+		return c.value.(MatchFunc)(valueInterface)
 	default:
-		result, err := c.compare(testValue.Interface(), c.value)
+		result, err := c.compare(valueInterface, c.value)
 		if err != nil {
 			return false, err
 		}
@@ -176,7 +179,7 @@ type Comparer interface {
 }
 
 // MatchFunc is a function used to test an arbitrary matching value in a query
-type MatchFunc func(testValue interface{}) (bool, error)
+type MatchFunc func(value interface{}) (bool, error)
 
 func compare(value, other interface{}) (int, error) {
 	switch t := value.(type) {
