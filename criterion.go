@@ -31,6 +31,19 @@ import (
 	"time"
 )
 
+type operation int
+
+const (
+	eq    operation = iota
+	ne              // !=
+	gt              // >
+	lt              // <
+	ge              // >=
+	le              // <=
+	fn              // func
+	isnil           // test's for nil
+)
+
 type Criterion struct {
 	fieldPath string
 	operation operation
@@ -72,15 +85,32 @@ func (c *Criterion) compare(testedValue, criterionValue interface{}) (int, error
 }
 
 func (c *Criterion) match(testValue interface{}) (bool, error) {
-	result, err := c.compare(testValue, c.value)
-	if err != nil {
-		return false, err
-	}
 	switch c.operation {
-	case eq:
-		return result == 0, nil
+	case fn:
+		return c.value.(MatchFunc)(testValue)
+	case isnil:
+		return reflect.ValueOf(testValue).IsNil(), nil
 	default:
-		panic("invalid operator")
+		result, err := c.compare(testValue, c.value)
+		if err != nil {
+			return false, err
+		}
+		switch c.operation {
+		case eq:
+			return result == 0, nil
+		case ne:
+			return result != 0, nil
+		case gt:
+			return result > 0, nil
+		case lt:
+			return result < 0, nil
+		case le:
+			return result < 0 || result == 0, nil
+		case ge:
+			return result > 0 || result == 0, nil
+		default:
+			panic("invalid operation")
+		}
 	}
 }
 
@@ -119,6 +149,9 @@ func (e *errTypeMismatch) Error() string {
 type Comparer interface {
 	Compare(other interface{}) (int, error)
 }
+
+// MatchFunc is a function used to test an arbitrary matching value in a query
+type MatchFunc func(testValue interface{}) (bool, error)
 
 func compare(value, other interface{}) (int, error) {
 	switch t := value.(type) {

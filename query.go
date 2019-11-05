@@ -9,13 +9,6 @@ import (
 	dsquery "github.com/ipfs/go-datastore/query"
 )
 
-type operation int
-
-const (
-	eq operation = iota
-	// ToDo: Further operations here
-)
-
 var (
 	panicInvalidSortingField = "sorting field doesn't correspond to instance type"
 	panicCantCompareOnSort   = "can't compare while sorting"
