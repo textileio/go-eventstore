@@ -117,6 +117,8 @@ func (m *Model) validInstance(v interface{}) (bool, error) {
 	return r.Valid(), nil
 }
 
+// Txn represents a read/write transaction in the Store. It allows for
+// serializable isolation level within the store.
 type Txn struct {
 	model     *Model
 	discarded bool
@@ -126,6 +128,7 @@ type Txn struct {
 	actions []core.Action
 }
 
+// Create creates new instances in the model
 func (t *Txn) Create(new ...interface{}) error {
 	for i := range new {
 		if t.readonly {
