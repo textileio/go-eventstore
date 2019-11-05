@@ -93,7 +93,7 @@ func TestValidStore(t *testing.T) {
 	}
 }
 
-func TestQuery(t *testing.T) {
+func TestDispatcherQuery(t *testing.T) {
 	eventstore := NewTxMapDatastore()
 	dispatcher := NewDispatcher(eventstore)
 	var events []core.Event
