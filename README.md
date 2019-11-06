@@ -1,3 +1,6 @@
+# DEPRECATED
+This repository is DEPRECATED, all contents were moved to [go-textile-threads](https://github.com/textileio/go-textile-threads).
+
 # go-eventstore
 
 [![Made by Textile](https://img.shields.io/badge/made%20by-Textile-informational.svg?style=flat-square)](https://textile.io)
